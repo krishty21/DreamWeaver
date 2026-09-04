@@ -13,6 +13,7 @@ import { CaptureView } from "@/components/views/capture-view";
 import { JournalView } from "@/components/views/journal-view";
 import { DreamDetailView } from "@/components/views/dream-detail-view";
 import { PatternsView } from "@/components/views/patterns-view";
+import { AtlasView } from "@/components/views/atlas-view";
 import { ArcadeView } from "@/components/views/arcade-view";
 import { ArcadeSessionView } from "@/components/views/arcade-session-view";
 import { ProfileView } from "@/components/views/profile-view";
@@ -35,11 +36,21 @@ export default function Home() {
 
   const authed = status === "authenticated";
 
-  // Global keyboard shortcuts (only when authenticated and not typing).
-  // C capture · J journal · P patterns · A arcade · T today
+  // Global keyboard shortcuts (only when authenticated).
+  // C capture · J journal · P patterns · A arcade · T today · X atlas
+  // r7: Cmd/Ctrl+K opens capture from anywhere, even while typing — this is
+  // the wake-up use case, when every second matters before the dream fades.
   useEffect(() => {
     if (!authed) return;
     const onKey = (e: KeyboardEvent) => {
+      // Cmd/Ctrl+K → capture (works in any context, including inputs)
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        navigate("capture");
+        return;
+      }
+      // Single-key shortcuts below ignore modifier keys and require
+      // the focus NOT to be inside a text input.
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       if (
@@ -59,6 +70,9 @@ export default function Home() {
           break;
         case "p":
           navigate("patterns");
+          break;
+        case "x":
+          navigate("atlas");
           break;
         case "a":
           navigate("arcade");
@@ -141,6 +155,8 @@ function renderView(view: View) {
       return <DreamDetailView />;
     case "patterns":
       return <PatternsView />;
+    case "atlas":
+      return <AtlasView />;
     case "arcade":
       return <ArcadeView />;
     case "session":
@@ -157,6 +173,7 @@ function moodFor(view: View): string {
   if (view === "session" || view === "arcade") return "surreal";
   if (view === "capture") return "lucid";
   if (view === "dream" || view === "shared") return "melancholic";
+  if (view === "atlas") return "lucid";
   if (view === "patterns") return "neutral";
   return "neutral";
 }

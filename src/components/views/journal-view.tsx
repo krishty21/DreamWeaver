@@ -168,6 +168,7 @@ export function JournalView() {
     <div className="mx-auto w-full max-w-5xl px-5 sm:px-8 py-10 sm:py-14">
       <div className="flex items-center justify-between gap-3 mb-8">
         <div>
+          <div className="page-rule mb-2" aria-hidden="true" />
           <div className="text-xs tracking-caps uppercase text-muted-foreground mb-2">
             Dream journal
           </div>

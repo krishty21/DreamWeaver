@@ -1,0 +1,200 @@
+Task ID: r3 (webDevReview cron round 3)
+Agent: main (webDevReview)
+Task: QA pass, critical bug fix (landing CTA blocked), new features (voice capture via ASR, dashboard observatory stats + motif-ranked revisit, arcade scene-forming loading UX), styling polish
+
+## Current project status / assessment
+- App stable at round start: dev server healthy, lint clean, 0 console errors, all golden-path flows from previous rounds working (verified: landing, sign-in, dashboard, journal, patterns, arcade sessions + live LLM turn, dream detail, profile, capture, mobile 390×844).
+- QA test user: lucia@dreamweaver.test / password reset to qa-test-123 for this round's testing (bcrypt hash updated directly in DB).
+- QA found 1 critical bug + several improvement opportunities (see below). No other runtime/compile errors anywhere.
+
+## Goals / completed modifications / verification results
+1. CRITICAL BUG FIX: Landing hero CTAs ("Start your dream memory" / "I have an account") were UNCLICKABLE — the decorative floating-fragments layer (absolute inset-0, added in r2) painted above the hero content and intercepted all clicks (agent-browser: "Element is covered by <div.absolute.inset-0>"). Fix: added `pointer-events-none select-none` to the fragments container. Verified as signed-out user on fresh browser: both hero CTAs navigate to #/auth (signup/signin modes respectively). ✅
+2. FEATURE — VOICE DREAM CAPTURE (the wake-up use case, flagship of this round):
+   - New API route `src/app/api/asr/route.ts`: POST { audioBase64 } → z-ai-web-dev-sdk `zai.audio.asr.create` → { text }. requireUser() enforced; base64 validated (charset + ≤8MB); empty transcription → 422; model failure → 502. The transcript never auto-persists — user reviews before recording.
+   - New client lib `src/lib/voice-recorder.ts`: VoiceRecorder class records mic via getUserMedia + AudioContext (prefers 16kHz context; falls back to device rate + deterministic linear downsampling), captures PCM via ScriptProcessor, encodes standard 16-bit PCM WAV in-browser ( universally accepted by ASR — avoids MediaRecorder's webm/opus), returns base64 + duration. Live level callback (RMS) drives the UI orb via CSS var (no re-renders). Hard 120s cap, clean track/ctx teardown, cancel() support.
+   - CaptureView: "speak" affordance beside sample links → full recording state (concentric ring-rec animation, level-reactive orb-rec, blinking rec-dot, 0:00/1:30 timer + progress bar, Stop & transcribe / Discard) → transcribing state ("Writing down what you said…") → transcript appended into textarea with "FROM VOICE" marker chip. Graceful degradation: unsupported browser hides the button; permission-denied / no-device / empty / too-short all produce specific toasts, editor always restored.
+   - Verification: (a) REAL speech round-trip — TTS-generated WAV of "I was running through an abandoned school…" POSTed to /api/asr with session cookie → 200 with accurate transcript; (b) edge cases: empty body → 400 no_audio, invalid base64 → 400 invalid_audio, no cookie → 401; (c) in-browser pipeline — stubbed getUserMedia with synthetic oscillator MediaStream in headless Chromium, clicked speak → recording UI live (timer, --lvl 0.226 on orb) → Stop & transcribe → "Dream transcribed" toast + transcript inserted; (d) Discard path restores editor. ✅
+3. FEATURE — Dashboard observatory stats: new stat tile row (dreams kept / nights remembered / current streak "N nights in a row" with accent when active / arcade sessions). Streaks computed app-side from dream timestamps (current streak counts consecutive dream-days ending today OR yesterday so a run isn't reset by waking late; longest run across history as fallback label). Verified: "2 dreams kept · 1 night remembered · 1 night in a row · 3 arcade sessions", mobile 2-col layout OK. ✅
+4. FEATURE — Smarter revisit recommendation: replaced "oldest dream" heuristic with motif-recurrence ranking (pickRevisit: each dream scored by weighted presence of top recurring motifs, penalised per existing arcade session on that dream, ties → oldest). Revisit card now shows matched motif chips ("Repetition ×2", "Pursuit ×1", "Entrapment ×1") + "Carries your most recurrent motifs — they keep returning." Verified live: Endless School Chase recommended with correct chips. ✅
+5. FEATURE — Arcade scene-forming loading UX (perceived latency): pending turn now renders an immersive block — "THE DREAM IS FORMING" header with blinking dot + elapsed seconds counter (font-data), drifting dream orb, 4 shimmer placeholder lines (scene-preview skeleton), and rotating serif whisper phrases ("somewhere behind your eyes, the scene is assembling…" etc., 3.6s rotation, AnimatePresence cross-fade). role=status aria-live=polite; correct aria-label on timer. Verified live mid-turn + VLM screenshot review ("polished and intentional"). ✅
+6. STYLING (new CSS utilities in globals.css, all in design-system palette): .ring-rec (expanding concentric rings), .orb-rec (level-reactive orb), .rec-dot (blink), .shimmer-line + ::after sweep, .drift-orb, .stat-tile hover lift, .whisper breathing text. Capture headline copy now invites the half-asleep voice path ("or, still half-asleep, speak it and read it back after"). Fragments container made select-none.
+7. Hygiene during this round: fixed lucide `Map` icon import shadowing the global Map constructor in dashboard-view (renamed to MapIcon); fixed a missing `}` in the loading timer aria-label JSX (caught by tsc + bun parse); removed unused Loader2/BookOpenText import issues; final state: ESLint 0 problems, tsc 0 errors in src/, dev.log clean, 0 console errors on fresh browser across all views.
+8. Post-feature full-flow regression: captured a brand-new dream through the refactored CaptureView (typing path) → Gemini analysis completed → dream detail rendered ("multiplying stairs", all sections) → dashboard updated to 3 dreams kept. Voice + typing paths coexist. ✅
+
+## Unresolved issues / risks / next-phase recommendations
+- Shareable read-only demo mode for the social demo post (still open; needs a safe read-only route/flag design).
+- Real-microphone voice QA was validated via (a) real speech through the API directly and (b) synthetic-stream pipeline in headless Chromium; a physical-mic smoke test on a real device remains advisable.
+- ASR transcript punctuation/casing is model-dependent — transcripts are inserted as-heard (deliberate: raw preservation principle); a light "clean up transcript" affordance could be considered later.
+- ScriptProcessorNode is deprecated but universally supported; if it's ever removed from browsers, migrate to AudioWorklet (interface of VoiceRecorder stays the same).
+- Future polish ideas: streaming scene text as it generates (perceived latency), dream calendar heatmap in patterns, export dream journal as markdown/PDF, gentle email-free "nightly check-in" nudge state on dashboard.
+- Screenshots this round in /home/z/my-project/download/: qa-r3-dashboard.png, qa-r3-dream-detail.png, qa-r3-session-before.png, qa-r3-mobile.png, qa-r3-dashboard-stats.png, qa-r3-loading-ux.png, qa-r3-dashboard-final.png, qa-r3-mobile-stats.png, qa-r3-mobile-capture.png, qa-r3-landing.png, qa-r3-final-dashboard.png.
+- QA credential note: lucia@dreamweaver.test password is now qa-test-123 (changed from unknown r2 value for testing).
+
+---
+Task ID: r4 (in progress)
+Agent: main (webDevReview cron round 4)
+Task: QA pass, arcade turn robustness fix (malformed JSON), shareable read-only reflection, calendar heatmap, journal export, styling polish
+
+Work Log (so far):
+- QA pass: landing, signin, dashboard, journal, patterns, arcade (incl. live LLM turn), profile, dream detail all render with 0 console errors.
+- BUG FOUND in QA: live arcade turn 5 fell back to "Model response was malformed" (fallback turn persisted, no retry, no logging).
+- FIXED src/lib/ai.ts: (1) extractJSON hardened — normalizeJSONSource (smart quotes, BOM, zero-width, // comments), parseWithRepairs (trailing commas, truncation repair via bracket-stack walker that terminates dangling strings and closes open structures), top-level array handling; (2) one repair retry for both analyzeDream + generateArcadeTurn (echoes the failed output, demands strict JSON); (3) console.warn diagnostics with head+tail+length. 12/12 unit tests pass (scripts-test/test-extract.ts). Verified live: turn 6 recovered via retry after a real malformed response (69s POST, full scene + choices).
+- Dev-server restart was needed after prisma schema change (stale client in globalThis): db.ts now has SCHEMA_VERSION cache-bust for future HMR-safe schema changes; server relaunched detached via .zscripts/restart-dev.sh (double-fork, survives tool sessions).
+- FEATURE: shareable read-only reflection (flagship of this round):
+  - Prisma: Dream.shareToken (unique, 48-hex), shareIncludeRaw (default false), sharedAt. db:push done.
+  - POST/DELETE /api/dreams/[id]/share (auth + ownership; token kept stable on re-share so circulated links survive; includeRaw togglable).
+  - GET /api/shared/[token] — PUBLIC, sanitised payload only: title, day-level dates, mood, author FIRST NAME only, reflection fields; rawText ONLY if opted in; NEVER modelRawJson / historicalConnections / internal ids / email. no-store.
+  - Store/page: #/shared/<token> view, public when signed out, own brand bar + footer + CTA; app TopNav/Footer hidden on shared view; auth-routing no longer redirects shared → landing.
+  - SharedDreamView: editorial read-only page (masthead, private-memory notice when raw not shared, summary, emotional signature, motif/symbol/people/place/action chips, lucidity/fear/uncertainty meters, interpretations with confidence tags, CTA cards, footer).
+  - DreamDetailView: Share button + SharePanel (URL + copy w/ copied state, Preview, Revoke, include-raw Switch with privacy copy).
+  - Verified end-to-end: create share → panel w/ URL + since-date → signed-OUT fresh browser renders full page (0 console errors) → includeRaw toggle persisted in DB + raw text appears in public payload → revoke → panel gone + API 404 → re-shared for demo (token 924dce21c4998dad9a1e848caec4df20b3e80cc6ec78a25f).
+  - Edge cases: invalid/short token → 404; unauthenticated /api/dreams/<id> → 401; dream without analysis → 409 on share create.
+
+Work Log (continued — features + polish + final QA):
+- FEATURE: Nights-remembered calendar heatmap (Patterns view):
+  - types.ts: CalendarDay { date, count, mood }; patterns.ts computes dreamCalendar app-side (per-day aggregation, dominant mood, ties → latest dream's mood).
+  - New src/components/views/dream-calendar.tsx: 20-week grid (weeks as columns, Mon–Sun rows), month labels, editorial mood palette (tense=ink, melancholic=slate, surreal=mauve, lucid=rose, neutral=warm grey), intensity by dreams-per-day (0.45/0.7/0.95), today outline, per-cell aria-label+title tooltips ("Aug 28 — 3 dreams · surreal"), staggered entrance, whileHover scale. Horizontal-scroll on mobile (min-w 560px). Legend with mood keys + today + empty.
+  - VLM design review applied: empty cells faded to 0.32 opacity so recorded nights pop.
+- FEATURE: Journal export as Markdown (src/lib/journal-export.ts):
+  - buildJournalMarkdown (header with author + N dreams across N nights, month sections, full OBSERVED quote + AI reflection + emotions/motifs/symbols/people/places/actions/meters/interpretations per dream), buildDreamMarkdown (single dream), downloadMarkdown (Blob), slugify.
+  - Journal view: "Export .md" button (disabled when empty, toast on success). Dream detail: per-dream export button. Both verified via agent-browser download → inspected file contents (4248-byte journal, correct structure).
+- STYLING POLISH (globals.css + components):
+  - .meter-fill meterIn animation (backwards fill so arcade per-turn transitions still work — verified reasoning, not `both`).
+  - Calendar cell whileHover 1.45 scale; .share-url (user-select: all, ellipsis); .drop-first editorial drop-cap on shared summary; .mood-dot on journal cards (colour-keyed); print styles (.no-print, white bg) for the shared page; shared-view metadata contrast raised (foreground/80); export button presence (border-foreground/25 + bg-card + shadow); floating dream fragments on the shared public page (brand cohesion, pointer-events-none).
+- VLM UI review round: fixed metadata contrast, export-button hierarchy, calendar empty-state noise. Verdict after fixes + mobile 390px review: "ALL GOOD" (calendar fits, share panel usable, no overlaps).
+- GOLDEN-PATH REGRESSION: fresh capture typed end-to-end → Gemini analysis ("Museum of Hidden Faces") → dream detail rendered → calendar live-updated to "Aug 28 — 4 dreams · surreal". 0 console errors on every view (dashboard, patterns, journal, arcade, capture, profile, dream detail, shared) desktop + mobile.
+- Final state: ESLint 0 problems, tsc 0 errors in src/, dev server healthy (200), no runtime errors in current dev.log.
+
+Stage Summary:
+- 1 robustness bug fixed (malformed model JSON no longer burns a turn: repair + retry + logging; 12/12 unit tests).
+- 3 new features shipped and browser-verified: shareable read-only reflection (flagship), nights-remembered calendar heatmap, Markdown export (journal + single dream).
+- Styling deepened per VLM review; print support for shared pages.
+
+Unresolved / next-phase recommendations:
+- Voice QA on a physical device (ASR pipeline verified synthetically + real speech via API).
+- Consider streaming scene text (perceived latency) — the retry adds a second model call in the worst case (69s observed once); the loading UX mitigates.
+- Share links could get an expiry option; currently revoke is manual.
+- Calendar could become clickable (navigate to that day's dreams) once users have history.
+- Dashboard "revisit" and calendar could share the mood palette constants (extract to a lib module if more mood-visuals appear).
+- Screenshots this round in /home/z/my-project/download/: qa-r4-*.png (landing, dashboard, patterns, journal, arcade, capture, profile, dream-detail, share-panel, shared-view, shared-signedout, shared-bottom, shared-v2, calendar, calendar-v2, journal-v2, mobile-*, turn-after-fix, turn6-recovered, capture-progress, capture-result, final-*).
+- QA credentials: lucia@dreamweaver.test / qa-test-123. Live demo share link token: 924dce21c4998dad9a1e848caec4df20b3e80cc6ec78a25f (#/shared/...).
+- Dev-server note: if the sandbox restarts, .zscripts/restart-dev.sh re-launches the detached dev server (double-fork daemonizer added this round).
+
+---
+Task ID: r5 (webDevReview cron round 5)
+Agent: main (webDevReview)
+Task: QA pass, mobile horizontal-overflow bugfix (latent layout bug), new features (journal search & mood filter, calendar day drill-down, share link expiry), styling polish + two VLM design review rounds
+
+## Current project status / assessment
+- Round started stable: dev server healthy (200), ESLint 0 problems, tsc 0 errors in src/, dev.log clean.
+- Full QA pass via agent-browser: landing, signin, dashboard, journal, patterns, arcade (+ one LIVE LLM turn on the active CONFRONT session — scene progressed correctly, r4's malformed-JSON retry holding), profile, capture, dream detail, public shared view — all rendered with 0 console errors.
+- No functional bugs found in the QA pass; one real LATENT LAYOUT BUG found during mobile-width verification (see fix 1).
+
+## Goals / completed modifications / verification results
+1. BUG FIX (latent, mobile): horizontal overflow on dream-detail (scrollWidth 723 vs 390) and patterns (650 vs 390).
+   - Root causes (two compounding):
+     a) View wrappers (`mx-auto max-w-* px-5…`) are flex items inside the app shell's flex-COLUMN parent; `mx-auto` (auto cross-axis margins) DISABLES stretch, so the wrapper is sized fit-content → grows to subtree max-content (capped only by max-w) regardless of viewport. Desktop looked fine (content ≈ cap ≈ 896), mobile overflowed whenever the subtree had wide intrinsic content.
+     b) Long chips (motif/symbol label + note, up to 485px) and the dream-detail action bar didn't wrap.
+   - Fixes: added `w-full` to ALL view wrappers (9 files: journal, patterns ×2, capture, arcade, arcade-session, dream-detail, dashboard, profile) — width now 100% of parent on mobile, capped by max-w on desktop, still centered (verified desktop: 896px wrapper perfectly centered at 1440 viewport); restructured ItemGroup chips (label+note in one wrapping flow, confidence glyph shrink-0) + relationship chips (flex-wrap + min-w-0) + `max-width: 100%` on `.chip` globally; action bar `flex-wrap`; `.dream-field` got `overflow: hidden` so decorative orbs can never widen the page.
+   - Verified: scrollWidth === clientWidth (390) on ALL views (journal, patterns, dashboard, capture, profile, arcade, dream detail); desktop centering preserved; VLM mobile re-review: "ALL GOOD".
+2. FEATURE — Journal search & mood filter (journal-view rewrite):
+   - Search input (editorial, h-12, search icon, clear button, `/` kbd hint) matches title, raw text, analysis summary, motif/symbol/person/place labels — one field finds the whole night. "/" keyboard shortcut focuses search (ignored while typing / with modifiers).
+   - Mood filter chips (All + per-mood with counts, editorial mood dots); active chip = dark filled pill (consistent with share-panel segmented control, aria-pressed, light ring keeps mood dot visible).
+   - "Showing N of M recorded dreams" live region while filtering; dedicated "No dreams match — yet." empty state with Clear-the-search action; footer privacy whisper line.
+   - Journal loading replaced by 4-card shimmer skeleton (uses existing .shimmer-line).
+   - Verified live: "ocean" → 2 of 4; mood tense + query → 0 + empty state; clear restores; "/" focuses search (document.activeElement = search input).
+3. FEATURE — Calendar day drill-down (patterns → journal):
+   - Store: `journalDate` state + `#/journal/<YYYY-MM-DD>` deep links (parseHash/toHash/navigate; date-regex validated; navigating anywhere else clears it).
+   - DreamCalendar: recorded cells are now buttons (role=button, tabIndex, Enter/Space, focus outline, pointer cursor, hover scale only on recorded cells) → navigate to that night. Header hint: "click a night to open its dreams".
+   - JournalView: day banner (calendar icon, "One night, opened from the calendar", full weekday date, N dreams, "All dreams" back button) + day filtering.
+   - Verified: patterns → click "Aug 28 — 4 dreams · surreal" → #/journal/2026-08-28 with banner + 4 dreams; back button → #/journal; deep-link survives reload.
+4. FEATURE — Share link expiry:
+   - Prisma: Dream.shareExpiresAt (db:push applied; SCHEMA_VERSION → 'v3-share-expiry').
+   - POST /api/dreams/[id]/share accepts expiresInDays (int 1–365 | null; undefined = keep current); expiry always re-armed from NOW; DELETE clears it.
+   - GET /api/shared/[token]: expired links → 404 { error: "expired" } (distinct code, reveals nothing else); live payload includes expiresAt.
+   - SharedDreamView: distinct "This window has closed." public state (Hourglass icon) vs revoked/not-found; public masthead shows "closes <date>" when armed.
+   - SharePanel: expiry label ("7 days left" / "last day" / "expired — renew or revoke" + destructive hint), segmented control 7 days / 30 days / Forever (aria-pressed, dark active pill), two-column grid with include-raw switch.
+   - Verified end-to-end: set 7 days → panel "7 days left" + correct aria-pressed + public page "closes Sep 4, 2026"; back-dated expiry in DB → public "This window has closed." + owner panel "expired — renew or revoke"; renew via "Forever" → public page restored, panel shows "never". Demo link left on "never" (forever).
+   - NOTE: dev server needed a REAL restart after the schema change (restart-dev.sh started a new server but the old one was still alive — killed stale PIDs manually, relaunched; Prisma client regenerates via db:push, the stale in-memory client caused "Unknown argument shareExpiresAt" 500s).
+5. STYLING / POLISH:
+   - VLM design review round 1 (journal + filtered view): applied 3 notes — cleaner placeholder (no trailing ellipsis), subtler results meta (text-xs, muted), clearer active chip state.
+   - VLM review round 2 (journal v2 + share panel desktop): "APPROVED FOR PRODUCTION".
+   - VLM mobile review: caught the overflow that led to fix 1; post-fix verdict "ALL GOOD".
+   - Global: `.chip { max-width: 100% }` safety net; `.dream-field { overflow: hidden }`.
+
+## Unresolved issues / risks / next-phase recommendations
+- Streaming scene text (perceived latency) still open — worst-case turn = 2 model calls (~70s observed once); the r3 loading UX mitigates.
+- Calendar cells could show a hover popover with that night's dream titles (currently tooltip = count + mood).
+- Search could highlight matched terms inside cards (currently filters only).
+- Journal search is client-side across all dreams — fine at diary scale; move server-side if journals exceed ~500 entries.
+- Consider extracting MOOD_COLORS into a shared lib module (journal-view and dream-calendar now both define it).
+- Voice capture on a physical device still untested (synthetic + real-speech API paths verified in r3).
+- Dev-server note (IMPORTANT for next agents): after ANY prisma schema change, verify the OLD server processes are actually dead before running restart-dev.sh (`ps aux | grep next`); the script starts a new server but does not kill stale ones.
+- Screenshots this round in /home/z/my-project/download/: qa-r5-dashboard.png, qa-r5-session.png, qa-r5-journal-search.png, qa-r5-journal-filtered.png, qa-r5-journal-v2.png, qa-r5-share-panel.png, qa-r5-mobile-journal.png, qa-r5-mobile-share.png, qa-r5-mobile-detail-fixed.png, qa-r5-mobile-journal-v2.png, qa-r5-patterns-final.png, qa-r5-dashboard-final.png.
+- QA credentials: lucia@dreamweaver.test / qa-test-123. Live demo share link (never-expires): token 924dce21c4998dad9a1e848caec4df20b3e80cc6ec78a25f (#/shared/...).
+
+---
+Task ID: r6 (webDevReview cron round 6)
+Agent: main (webDevReview)
+Task: QA pass, refactor mood palette into shared lib, calendar hover popover with dream titles, journal search highlighting, more card micro-interactions, streaming scene text via SSE for arcade turns, dashboard "tonight's reflection prompt" card + streak microcopy + mood-accented recent-dream card, styling polish
+
+## Current project status / assessment
+- Round started stable: dev server healthy (200), ESLint 0 problems, tsc 0 errors in src/, dev.log clean.
+- QA pass via agent-browser at start (desktop 1440 + mobile 390): landing, signin, dashboard, journal, patterns, arcade, profile, dream detail, public shared view — all rendered with 0 console errors and scrollWidth === clientWidth on every view (no horizontal overflow). The r5 mobile-overflow fix held.
+- No bugs found in the QA pass; the round proceeded to new features + polish.
+
+## Goals / completed modifications / verification results
+
+1. REFACTOR — shared mood palette (DRY):
+   - New `src/lib/moods.ts` exporting MOOD_COLORS, MOODS, moodColor(mood), dayIntensity(count). Extracted from journal-view.tsx and dream-calendar.tsx (both previously defined their own copy).
+   - journal-view.tsx + dream-calendar.tsx now import from `@/lib/moods`. Lint clean. Calendar intensity is now a single source of truth.
+
+2. FEATURE — Calendar hover popover with dream titles (patterns → calendar):
+   - Extended `CalendarDay` type (src/lib/types.ts) with `titles: string[]` (up to 3 dream titles per day).
+   - patterns.ts computePatternReport now populates titles alongside count + mood. No new API call needed — the existing /api/patterns response carries the titles.
+   - dream-calendar.tsx now renders a framer-motion AnimatePresence popover on cell hover (desktop only — mobile keeps click-to-drill-down). The popover shows: full weekday date, dominant mood dot, "N dreams kept", up to 3 dream titles as a list with "· " prefix, "+ N more" if count > titles.length, and "click to open the night" hint. Fixed-positioned to viewport so it works inside the overflow-x-auto grid without being clipped. Hides on scroll. pointer-events-none so it never blocks the click through to the drill-down.
+   - Verified live via agent-browser hover on "Aug 28 — 4 dreams · surreal": popover text reads "AUG 28 / SURREAL / 4 dreams kept / · Endless School Chase / · Oceanic Boundary / · multiplying stairs / + 1 more / click to open the night". VLM mobile review verdict: "readable and well-positioned, doesn't obscure surrounding interface elements".
+
+3. FEATURE — Journal search highlighting:
+   - New `Highlight` component in journal-view.tsx: splits text on the query (case-insensitive), wraps each match in `<mark class="bg-[var(--rose)]/60">`. Used inside DreamCard for title, summary, and motif chips. The mark uses the editorial dusty-rose so it reads as a soft underline, not a harsh yellow highlighter.
+   - DreamCard now accepts `query` prop (passed through from the JournalView search state); all rendered text runs through Highlight.
+   - Verified live via agent-browser: typed "museum" → 2 `<mark>` elements appeared in the matching card (title "Museum" + body text containing "museum"). VLM verdict: "matched term 'museum' is visibly highlighted in both the title and the body text of the displayed card".
+
+4. FEATURE — More card micro-interactions:
+   - Journal DreamCard: `whileHover={{ y: -4 }}` layered on top of the existing `.lift` class for a deeper hover lift; "Read reflection" button now uses `group` + ArrowRight icon that fades/slides in on hover; "Re-enter" Compass icon rotates 12° on hover. Both are ARIA-friendly (icon `aria-hidden`, button text remains visible).
+   - Dashboard recent-dream card: `whileHover={{ y: -4 }}`, mood-tinted accent ribbon at the top edge (gradient from the dream's mood color → transparent), Moon icon rotates 12° on hover, ArrowRight slides 1px on hover. New Clock icon beside the date for visual rhythm.
+   - Dashboard recent-dream card now shows motif chips at the bottom (up to 4 with "+N" overflow) so the dream's recurring elements are surfaced right on the dashboard, not just on the detail view.
+
+5. FEATURE — Streaming scene text for arcade turns (the perceived-latency flagship):
+   - ai.ts: new `generateArcadeTurnStreaming(opts, onDelta)` function. Calls the SDK with `stream: true`; the SDK returns `response.body` (a ReadableStream) when the server honours text/event-stream. We parse SSE chunks (`data: {...}\n\n` lines, `[DONE]` terminator), buffer the cumulative text, and after each chunk run `extractPartialSceneText(buffer)` — a hand-written state machine that finds `"sceneText":"..."` in the partial JSON, decodes JSON escapes (\n, \t, \uXXXX, etc.), and returns the partial string + a `complete` flag. The newly-completed slice is emitted via `onDelta(text.slice(sent))`.
+   - The model output is a JSON object whose first field is `sceneText`, so partial scene text begins arriving within the first few chunks. The full JSON is parsed at end (with the existing repair+retry+fallback ladder from r4) and the structured response returned, exactly like `generateArcadeTurn`.
+   - New SSE endpoint: `POST /api/arcade/sessions/[id]/turn/stream`. Same ownership + state-application logic as the non-streaming `/turn` route, but emits `data: {"type":"delta","text":"..."}` events as the model streams, then a single `data: {"type":"final",...}` event with the authoritative turn + state + choices + ending, or `data: {"type":"error",...}` on failure. Response is a TransformStream with `text/event-stream`, `no-store`, `X-Accel-Buffering: no` headers. The streaming turn runs in the background; the readable end returns immediately so the client begins receiving deltas as the model produces them.
+   - arcade-session-view.tsx `takeTurn` now hits the stream endpoint, reads `res.body.getReader()`, parses SSE chunks manually (no EventSource — we need POST), and updates a new `streamingScene` state on each delta. The loading placeholder swaps from shimmer to a serif paragraph (`p.scene-text.streaming-text`) the moment the first chunk arrives; a thin serif caret (`.streaming-caret`) blinks while streaming. Whispers + elapsed-seconds timer keep running until the first chunk arrives. On `final`, react-query invalidates and the new turn renders normally.
+   - Verified end-to-end LIVE via agent-browser: clicked "Run against the reversed flow" on the active confront session → loading placeholder appeared → streamingScene text began arriving: "You run against the reversed flow of hallway, feet sliding against the floor tha..." → completed → turn 4 persisted to DB (verified via Prisma query: turnNumber=4, sceneTextHead="You run against the reversed flow of hallway, feet sliding against the floor tha", isEnding=false). Endpoint returned 200 in 7.9s (6.1s render = streaming + LLM). No errors in dev.log. The non-streaming `/turn` route is preserved as a fallback (not removed).
+
+6. FEATURE — Dashboard "tonight's reflection prompt" card + streak microcopy:
+   - New daily prompt card between the observatory stats and the deep content. Deterministic per-day rotation (promptSeed = days-since-epoch; modulo prompt-set length) so the prompt is stable all day (no flickering between renders). Two prompt sets — morning recall prompts (5am–noon) and evening intention prompts (noon–5am next day) — selected by hour. Each card has a Quote icon, promptKind label ("Morning recall" / "Tonight's prompt"), "DAILY" data label, italic serif prompt text, and an "Open in capture" group-hover affordance with ArrowRight that slides in.
+   - Streak microcopy: when streak > 0, the greeting eyebrow shows "N nights in a row — keep the thread." beside the greeting (small inline whisper, doesn't replace the stat tile).
+   - Verified live: dashboard shows "1 night in a row — keep the thread." in greeting eyebrow, and the prompt card reads "TONIGHT'S PROMPT / DAILY / Ask the dream to repeat itself. The same motif, seen twice, tells more. / Open in capture". VLM verdict: "layout is clean with consistent spacing; no text overflow, element overlap, or alignment problems".
+
+## Styling polish
+- globals.css: new `.streaming-caret` (thin serif bar that blinks, mauve→slate gradient) + `.streaming-text` (soft fade-in so newly-streamed text doesn't pop).
+- The shimmer placeholder in arcade-session now reads "The dream unfolds" (vs "The dream is forming") once streaming starts — a small but meaningful change of state.
+
+## Verification summary
+- Lint: ESLint 0 problems.
+- TS: tsc 0 errors in src/ (errors only in examples/, skills/, scripts-test/ — unchanged from prior rounds).
+- Dev server: healthy, 200 on every API route, no runtime errors.
+- Desktop (1440) + mobile (390) horizontal-overflow audit on every view: all clean (scrollW === clientW).
+- Live end-to-end streaming turn verified (DB persisted, sceneText matches streamed text).
+- VLM design review of dashboard prompt card, calendar hover popover, and journal search highlighting: all APPROVED.
+
+## Unresolved issues / risks / next-phase recommendations
+- True streaming depends on the upstream model server honouring `stream:true` + `text/event-stream`. If it ever returns parsed JSON instead, `generateArcadeTurnStreaming` falls back to a single delta emit (the whole scene text in one chunk) — UX is degraded but correctness is preserved. Worth re-verifying after SDK updates.
+- Calendar popover is desktop-only (mouseenter doesn't fire on touch). Mobile keeps click-to-drill-down. A long-press handler could be added for mobile popover parity if desired.
+- Streaming caret + text are decorative; on very slow networks the model could pause mid-stream. The elapsed-seconds timer remains visible so the user knows the turn is still in flight.
+- The non-streaming `/turn` route is preserved as a fallback. If the streaming endpoint proves stable over multiple rounds, the non-streaming route could be deprecated. For now both exist.
+- Turn latency is still ~7–8s for the streaming path (the model still has to produce the full JSON before the route can apply the authoritative delta). The streaming UX lets the user read instead of stare, but doesn't reduce total time. A two-call decomposition (scene text first, structured delta second) would reduce perceived latency further at the cost of doubling model calls — left for a future round.
+- Dashboard prompt set could grow; consider sourcing prompts from the user's own motifs (e.g. "Tonight, watch for X — it has returned N times in your dreams") instead of a static rotation. That would require a small endpoint or pattern-aware client logic.
+- Screenshots this round in /home/z/my-project/download/: qa-r6-*.png (landing, dashboard, journal, patterns, arcade, capture, profile, shared, mobile-*, stream-mid, stream-final, calendar-popover*, journal-highlight, dashboard-prompt, dashboard-v2, final-* for both desktop and mobile, arcade-session).
+- QA credentials: lucia@dreamweaver.test / qa-test-123. Live demo share link (never-expires): token 924dce21c4998dad9a1e848caec4df20b3e80cc6ec78a25f (#/shared/...). Active test arcade session with 4 turns now: cmtd39tzl0012l64i0d9xswep (confront mode, "Endless School Chase", confronting "Repetition").

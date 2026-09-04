@@ -49,6 +49,7 @@ export function ArcadeView() {
       ) : (
         <>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
+            <div className="page-rule" aria-hidden="true" />
             <div className="text-xs tracking-caps uppercase text-muted-foreground mb-2">
               Subconscious arcade
             </div>

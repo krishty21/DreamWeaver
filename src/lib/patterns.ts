@@ -8,6 +8,8 @@ import type {
   MotifFrequency,
   EmotionalTrendPoint,
   CalendarDay,
+  AtlasEntry,
+  TimelinePoint,
   Mood,
 } from "@/lib/types";
 
@@ -25,17 +27,26 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
   });
 
   // --- motif frequency ---
-  const motifMap = new Map<string, MotifFrequency>();
+  // r7: tracks a per-motif mood breakdown so the Atlas view can show how a
+  // single motif distributes across moods (e.g. "doors" → 3 surreal, 1 tense).
+  type Acc = MotifFrequency & {
+    moodBreakdown: Map<Mood, number>;
+    note?: string | null;
+  };
+  const motifMap = new Map<string, Acc>();
   for (const d of dreams) {
+    const mood = (d.mood as Mood) || "neutral";
+    const fear = d.analysis?.fear ?? 0;
     for (const m of d.motifs) {
       const key = `${m.type}::${m.label}`.toLowerCase();
       const existing = motifMap.get(key);
-      const fear = d.analysis?.fear ?? 0;
       if (existing) {
         existing.count += 1;
         existing.dreamIds.push(d.id);
         existing.lastSeen = d.createdAt.toISOString();
         existing.avgFear = (existing.avgFear * (existing.count - 1) + fear) / existing.count;
+        existing.moodBreakdown.set(mood, (existing.moodBreakdown.get(mood) ?? 0) + 1);
+        if (!existing.note && m.note) existing.note = m.note;
       } else {
         motifMap.set(key, {
           label: m.label,
@@ -46,6 +57,8 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
           lastSeen: d.createdAt.toISOString(),
           avgFear: fear,
           trend: "stable",
+          moodBreakdown: new Map([[mood, 1]]),
+          note: m.note ?? null,
         });
       }
     }
@@ -64,7 +77,26 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
     mf.trend = diff > 0.05 ? "rising" : diff < -0.05 ? "falling" : "stable";
   }
 
-  const topMotifs = Array.from(motifMap.values())
+  // r7 — full atlas: every motif (including people/places/actions), sorted
+  // count-desc then alphabetical for stability. Carries the mood breakdown
+  // so the Atlas view can render a per-motif mood spectrum.
+  const atlas: AtlasEntry[] = Array.from(motifMap.values())
+    .map((mf) => ({
+      label: mf.label,
+      type: mf.type,
+      count: mf.count,
+      dreamIds: mf.dreamIds,
+      firstSeen: mf.firstSeen,
+      lastSeen: mf.lastSeen,
+      avgFear: mf.avgFear,
+      trend: mf.trend,
+      moodBreakdown: Array.from(mf.moodBreakdown.entries()).map(([mood, count]) => ({ mood, count })),
+      note: mf.note ?? null,
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+
+  const topMotifs = atlas
+    .filter((m) => m.type === "symbol")
     .sort((a, b) => b.count - a.count || b.avgFear - a.avgFear)
     .slice(0, 12);
 
@@ -140,6 +172,18 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
     })
     .sort((a, b) => (a.date < b.date ? -1 : 1));
 
+  // r7 — timeline: one point per dream, oldest-first. The Atlas view renders
+  // this as a chronological motif map so the user can see their dreaming arc.
+  const timeline: TimelinePoint[] = dreams.map((d) => ({
+    dreamId: d.id,
+    date: d.createdAt.toISOString(),
+    title: d.title ?? "Untitled dream",
+    mood: (d.mood as Mood) || "neutral",
+    motifCount: d.motifs.length,
+    fear: d.analysis?.fear ?? 0,
+    lucidity: d.analysis?.lucidity ?? 0,
+  }));
+
   return {
     totalDreams: dreams.length,
     totalSessions: sessions.length,
@@ -150,5 +194,7 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
     recurringPairs,
     earliestDream: dreams[0]?.createdAt.toISOString() ?? null,
     latestDream: dreams[dreams.length - 1]?.createdAt.toISOString() ?? null,
+    atlas,
+    timeline,
   };
 }

@@ -10,6 +10,7 @@ export type View =
   | "journal"
   | "dream"
   | "patterns"
+  | "atlas"
   | "arcade"
   | "session"
   | "profile"
@@ -36,7 +37,7 @@ function parseHash(): { view: View; activeDreamId: string | null; activeSessionI
   const h = (typeof window !== "undefined" ? window.location.hash : "").replace(/^#\/?/, "");
   const [head, ...rest] = h.split("/");
   const view = (head as View) || "landing";
-  const valid: View[] = ["landing", "auth", "dashboard", "capture", "journal", "dream", "patterns", "arcade", "session", "profile", "shared"];
+  const valid: View[] = ["landing", "auth", "dashboard", "capture", "journal", "dream", "patterns", "atlas", "arcade", "session", "profile", "shared"];
   if (!valid.includes(view) || !view) return { view: "landing", activeDreamId: null, activeSessionId: null, activeShareToken: null, journalDate: null };
   let dreamId: string | null = null;
   let sessionId: string | null = null;

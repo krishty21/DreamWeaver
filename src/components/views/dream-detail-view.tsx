@@ -24,11 +24,15 @@ import {
   MoonStar,
   FileDown,
   Hourglass,
+  Headphones,
+  Play,
+  Pause,
+  X,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { Switch } from "@/components/ui/switch";
 import { buildDreamMarkdown, downloadMarkdown, slugify } from "@/lib/journal-export";
 import type {
@@ -53,6 +57,10 @@ export function DreamDetailView() {
   const qc = useQueryClient();
   const [reflecting, setReflecting] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
+  // r7 — audio playback state. The dream's narratable text is synthesised
+  // server-side via /api/tts (Gemini TTS) and streamed back as a single WAV
+  // the browser plays via <audio>. We revoke the object URL on close.
+  const [audioOpen, setAudioOpen] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["dream", dreamId],
@@ -185,11 +193,24 @@ export function DreamDetailView() {
         </button>
         <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
           <Button
+            variant="outline"
+            size="sm"
             onClick={() => navigate("arcade", { dreamId: dream.id })}
             className="h-9 bg-foreground text-background hover:opacity-90"
           >
             <Compass className="h-4 w-4" strokeWidth={1.6} />
             Re-enter dream
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setAudioOpen(true)}
+            disabled={audioOpen}
+            className="h-9"
+            aria-label="Listen to this dream"
+          >
+            <Headphones className="h-4 w-4" strokeWidth={1.6} />
+            <span className="sr-only sm:not-sr-only sm:ml-1.5">Listen</span>
           </Button>
           <Button
             variant="outline"
@@ -263,6 +284,16 @@ export function DreamDetailView() {
           onSetExpiry={(days) => onShare({ expiresInDays: days })}
           onRevoke={onRevokeShare}
           onPreview={() => navigate("shared", { shareToken })}
+        />
+      )}
+
+      {/* r7 — audio player. The dream is read back to the user by Gemini TTS.
+          Pairs with voice capture: speak a dream in, hear it read back later. */}
+      {audioOpen && (
+        <DreamAudioPlayer
+          dreamId={dream.id}
+          title={dream.title || "Untitled dream"}
+          onClose={() => setAudioOpen(false)}
         />
       )}
 
@@ -421,6 +452,246 @@ export function DreamDetailView() {
 }
 
 // ---------- sub-components ----------
+
+// r7 — Dream audio player. Calls /api/tts to synthesise the dream as a calm
+// spoken narration (Gemini TTS), then exposes a play/pause + seek + speed
+// control. The narration covers the dream's title + summary + raw text in
+// that order, capped at ~4000 chars server-side. Memory-bounded: the object
+// URL is revoked on unmount or when a fresh fetch replaces the audio src.
+function DreamAudioPlayer({
+  dreamId,
+  title,
+  onClose,
+}: {
+  dreamId: string;
+  title: string;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("loading");
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const [position, setPosition] = useState(0); // seconds
+  const [duration, setDuration] = useState(0); // seconds
+  const [rate, setRate] = useState(0.9); // TTS speed, 0.5..2.0
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function synthesise() {
+      setStatus("loading");
+      try {
+        const res = await fetch("/api/tts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ dreamId, speed: rate }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || "Could not synthesise this dream.");
+        }
+        const blob = await res.blob();
+        if (cancelled) return;
+        // Revoke any prior URL (rate-change re-fetch).
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
+        const url = URL.createObjectURL(blob);
+        objectUrlRef.current = url;
+        setAudioUrl(url);
+        setStatus("ready");
+      } catch (e: any) {
+        if (cancelled) return;
+        setStatus("error");
+        toast({
+          title: "Voice synthesis failed",
+          description: e.message,
+          variant: "destructive",
+        });
+      }
+    }
+    synthesise();
+    return () => {
+      cancelled = true;
+      if (objectUrlRef.current) {
+        URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = null;
+      }
+    };
+  }, [dreamId, rate]);
+
+  function togglePlay() {
+    const el = audioRef.current;
+    if (!el) return;
+    if (el.paused) {
+      el.play().catch(() => {});
+    } else {
+      el.pause();
+    }
+  }
+
+  function seekTo(e: React.MouseEvent<HTMLDivElement> | React.TouchEvent<HTMLDivElement>) {
+    const el = audioRef.current;
+    if (!el || !duration) return;
+    const bar = e.currentTarget as HTMLDivElement;
+    const rect = bar.getBoundingClientRect();
+    const x =
+      "touches" in e
+        ? (e as React.TouchEvent).touches[0]?.clientX ?? rect.left
+        : (e as React.MouseEvent).clientX;
+    const ratio = Math.max(0, Math.min(1, (x - rect.left) / rect.width));
+    el.currentTime = ratio * duration;
+    setPosition(el.currentTime);
+  }
+
+  function fmtTime(s: number): string {
+    if (!isFinite(s) || s < 0) s = 0;
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${String(sec).padStart(2, "0")}`;
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -8, height: 0 }}
+      animate={{ opacity: 1, y: 0, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.3 }}
+      className="surface p-5 sm:p-6 mb-2 overflow-hidden"
+      role="region"
+      aria-label="Spoken narration of this dream"
+    >
+      <div className="flex items-start gap-4">
+        <div className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.05] text-foreground/70">
+          <Headphones className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] tracking-caps uppercase text-muted-foreground">
+                Spoken reflection
+              </div>
+              <div className="font-display text-lg truncate">{title}</div>
+            </div>
+            <button
+              onClick={onClose}
+              aria-label="Close audio player"
+              className="shrink-0 inline-flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-foreground/[0.06] transition focus-ring"
+            >
+              <X className="h-4 w-4" strokeWidth={1.6} />
+            </button>
+          </div>
+
+          {status === "loading" && (
+            <div className="mt-4 flex items-center gap-3 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+              <span>Weaving the narration…</span>
+              <div className="audio-loading-bar flex-1 h-1 rounded-full bg-foreground/[0.07]" aria-hidden="true" />
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="mt-4 text-sm text-destructive/90">
+              The narration could not be produced. Close and try again, or read the dream instead.
+            </div>
+          )}
+
+          {status === "ready" && audioUrl && (
+            <>
+              <audio
+                ref={audioRef}
+                src={audioUrl}
+                onPlay={() => setPlaying(true)}
+                onPause={() => setPlaying(false)}
+                onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+                onTimeUpdate={(e) => setPosition(e.currentTarget.currentTime || 0)}
+                onEnded={() => setPlaying(false)}
+                className="hidden"
+                preload="metadata"
+              />
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={togglePlay}
+                  aria-label={playing ? "Pause narration" : "Play narration"}
+                  className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background hover:opacity-90 transition focus-ring"
+                >
+                  {playing ? (
+                    <Pause className="h-4 w-4" strokeWidth={1.6} />
+                  ) : (
+                    <Play className="h-4 w-4 ml-0.5" strokeWidth={1.6} />
+                  )}
+                </button>
+                <div className="flex-1 min-w-0">
+                  <div
+                    role="slider"
+                    aria-label="Narration position"
+                    aria-valuemin={0}
+                    aria-valuemax={Math.floor(duration) || 0}
+                    aria-valuenow={Math.floor(position)}
+                    tabIndex={0}
+                    onClick={seekTo}
+                    onKeyDown={(e) => {
+                      if (!audioRef.current || !duration) return;
+                      if (e.key === "ArrowRight") {
+                        audioRef.current.currentTime = Math.min(
+                          duration,
+                          audioRef.current.currentTime + 5
+                        );
+                      } else if (e.key === "ArrowLeft") {
+                        audioRef.current.currentTime = Math.max(
+                          0,
+                          audioRef.current.currentTime - 5
+                        );
+                      }
+                    }}
+                    className="cursor-pointer h-2 rounded-full bg-foreground/[0.07] relative focus-ring"
+                  >
+                    <div
+                      className="absolute inset-y-0 left-0 rounded-full bg-[linear-gradient(90deg,var(--rose),var(--mauve))]"
+                      style={{ width: `${duration ? (position / duration) * 100 : 0}%` }}
+                    />
+                    <div
+                      className="absolute top-1/2 -translate-y-1/2 h-3 w-3 rounded-full bg-foreground shadow-sm"
+                      style={{ left: `calc(${duration ? (position / duration) * 100 : 0}% - 6px)` }}
+                    />
+                  </div>
+                  <div className="mt-1.5 flex items-center justify-between font-data text-[10px] text-muted-foreground">
+                    <span>{fmtTime(position)}</span>
+                    <span>{fmtTime(duration)}</span>
+                  </div>
+                </div>
+                <div className="shrink-0 flex items-center gap-1">
+                  {[
+                    { v: 0.8, label: "slow" },
+                    { v: 0.9, label: "calm" },
+                    { v: 1.0, label: "natural" },
+                  ].map((opt) => (
+                    <button
+                      key={opt.v}
+                      onClick={() => setRate(opt.v)}
+                      aria-pressed={rate === opt.v}
+                      title={opt.label}
+                      className={`tts-speed-pill px-2.5 py-1 rounded-full text-[10px] tracking-caps uppercase transition-all focus-ring ${
+                        rate === opt.v
+                          ? "bg-foreground text-background"
+                          : "bg-foreground/[0.05] text-muted-foreground hover:text-foreground"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <p className="mt-3 text-[11px] text-muted-foreground italic pretty">
+                Narration covers the title, summary, and raw memory of this dream. Spoken by Gemini
+                TTS — advisory, never the dream itself.
+              </p>
+            </>
+          )}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
 
 function SharePanel({
   url,

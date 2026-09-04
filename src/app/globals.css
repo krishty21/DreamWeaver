@@ -525,3 +525,141 @@
     border-color: #ddd !important;
   }
 }
+
+/* ---------- r7 polish ---------- */
+
+/* Audio player progress bar — subtle animated sheen while loading */
+@keyframes audioPulse {
+  0%, 100% { opacity: 0.32; }
+  50% { opacity: 0.7; }
+}
+.audio-loading-bar { animation: audioPulse 1.6s ease-in-out infinite; }
+
+/* Atlas cards: subtle ink-tinted inner ring on hover to read as "selected" */
+.atlas-card:hover {
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.6) inset,
+    0 2px 4px rgba(65, 63, 61, 0.05),
+    0 24px 48px -28px rgba(65, 63, 61, 0.32),
+    0 0 0 1px color-mix(in srgb, var(--mauve) 30%, transparent);
+}
+
+/* Mood spectrum stacked bar — each segment has a soft inset highlight */
+.mood-segment {
+  position: relative;
+}
+.mood-segment::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,0.32) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+/* Long-press affordance — when the user holds a calendar cell, briefly
+   ring it in the foreground colour so the hold feels acknowledged. */
+@keyframes calHoldAck {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ink) 45%, transparent); }
+  100% { box-shadow: 0 0 0 6px transparent; }
+}
+.cal-hold-ack { animation: calHoldAck 0.6s ease-out; }
+
+/* Section eyebrow: a small typographic ornament (·) before the label */
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.eyebrow::before {
+  content: "";
+  display: inline-block;
+  width: 1.1rem;
+  height: 1px;
+  background: color-mix(in srgb, var(--mauve) 60%, transparent);
+}
+
+/* A "type tag" for the atlas — the small UPPERCASE label inside each card */
+.type-tag {
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+/* Page hero ornament — a soft horizontal hairline that sits above the page
+   title, evoking the top of a printed page. */
+.page-rule {
+  height: 1px;
+  width: 100%;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    color-mix(in srgb, var(--mauve) 70%, transparent) 30%,
+    color-mix(in srgb, var(--mauve) 70%, transparent) 70%,
+    transparent 100%);
+  margin-bottom: 1.25rem;
+}
+
+/* Soft fade at the bottom of long scroll regions (mobile) */
+.scroll-fade-b {
+  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 56px), transparent 100%);
+  mask-image: linear-gradient(to bottom, black calc(100% - 56px), transparent 100%);
+}
+
+/* Keyboard shortcut keycaps — make them feel physical */
+kbd {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--card) 100%, transparent) 0%,
+    color-mix(in srgb, var(--muted) 100%, transparent) 100%);
+  box-shadow:
+    inset 0 -1px 0 rgba(65, 63, 61, 0.18),
+    0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+/* TTS narration controls — the speed segmented control should read as
+   soft pills rather than the default button look */
+.tts-speed-pill {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  letter-spacing: 0.06em;
+}
+
+/* Subtle hover state for filter chips so they feel tactile */
+.filter-chip {
+  transition: background-color 200ms ease, color 200ms ease, transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.filter-chip:hover:not([aria-pressed="true"]) {
+  transform: translateY(-1px);
+}
+
+/* Long-press hint dots — three small dots that pulse while the user holds a
+   calendar cell, signalling that the hold is being acknowledged. */
+@keyframes holdDots {
+  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+  50% { opacity: 1; transform: scale(1); }
+}
+.hold-dot {
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  border-radius: 9999px;
+  background: var(--ink);
+  animation: holdDots 1.05s ease-in-out infinite;
+}
+.hold-dot:nth-child(2) { animation-delay: 0.15s; }
+.hold-dot:nth-child(3) { animation-delay: 0.3s; }
+
+/* Drop-cap-like ornament for the longitudinal arc heading on the atlas */
+.atlas-arc-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--muted-foreground);
+  font-size: 0.7rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+

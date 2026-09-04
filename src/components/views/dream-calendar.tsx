@@ -8,10 +8,14 @@
 // r6: hovering a recorded night pops a small card with that night's dream
 // titles + dominant mood. The popover anchors to the cell, hides on leave
 // or scroll, and stays pointer-events-none so it never blocks a click
-// through to the drill-down navigation. (Mobile keeps click-to-drill-down
-// as before — no hover on touch.)
+// through to the drill-down navigation.
+//
+// r7: long-press on a recorded night opens the same popover on touch devices
+// (where mouseenter doesn't fire). A short tap still drills into the night;
+// the long-press is detected by a 450ms hold threshold, with a small haptic
+// hint via navigator.vibrate when available.
 
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { CalendarDay } from "@/lib/types";
 import { useApp } from "@/lib/store";
@@ -38,6 +42,62 @@ export function DreamCalendar({ days }: { days: CalendarDay[] }) {
   // transition can run on enter/leave. Mobile doesn't fire mouseenter so the
   // popover is desktop-only by nature.
   const [hovered, setHovered] = useState<{ key: string; x: number; y: number; day: CalendarDay } | null>(null);
+
+  // r7: long-press state. We arm a 450ms timer on touchstart; if it fires
+  // before touchend/cancel, we treat it as a long-press and open the popover.
+  // A short tap doesn't trigger the timer and falls through to onClick →
+  // drill into the night.
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressArmed = useRef(false);
+
+  function armLongPress(e: React.TouchEvent, day: CalendarDay, key: string, el: HTMLElement) {
+    longPressArmed.current = false;
+    if (longPressTimer.current) clearTimeout(longPressTimer.current);
+    const t = e.touches[0];
+    const sx = t?.clientX ?? 0;
+    const sy = t?.clientY ?? 0;
+    longPressTimer.current = setTimeout(() => {
+      longPressArmed.current = true;
+      const rect = el.getBoundingClientRect();
+      // haptic hint when the device supports it
+      try {
+        navigator.vibrate?.(8);
+      } catch {}
+      setHovered({
+        key,
+        x: rect.left + rect.width / 2,
+        y: rect.bottom,
+        day,
+      });
+      // Auto-dismiss after 4s if no other interaction
+      setTimeout(() => {
+        setHovered((h) => (h?.key === key ? null : h));
+      }, 4000);
+    }, 450);
+    // Capture the start coords so we can cancel on movement (scrolls).
+    (el as any).__lpStart = { x: sx, y: sy };
+  }
+
+  function cancelLongPressMaybe(e: React.TouchEvent, el: HTMLElement) {
+    if (!longPressTimer.current) return;
+    const t = e.touches[0] ?? e.changedTouches[0];
+    const start = (el as any).__lpStart;
+    if (t && start && (Math.abs(t.clientX - start.x) > 8 || Math.abs(t.clientY - start.y) > 8)) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  function clearLongPress() {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  }
+
+  useEffect(() => {
+    return () => clearLongPress();
+  }, []);
 
   // Hide popover on scroll — it would otherwise drift off its anchor.
   useEffect(() => {
@@ -112,6 +172,11 @@ export function DreamCalendar({ days }: { days: CalendarDay[] }) {
               click a night to open its dreams
             </span>
           )}
+          {activeCells > 0 && (
+            <span className="ml-2 pl-2 border-l border-border/80 sm:hidden inline">
+              tap to open · hold to peek
+            </span>
+          )}
         </span>
       </div>
 
@@ -165,7 +230,14 @@ export function DreamCalendar({ days }: { days: CalendarDay[] }) {
                       tabIndex={entry ? 0 : -1}
                       onClick={
                         entry && !isFuture
-                          ? () => navigate("journal", { journalDate: key })
+                          ? () => {
+                              // If a long-press just fired, swallow the click.
+                              if (longPressArmed.current) {
+                                longPressArmed.current = false;
+                                return;
+                              }
+                              navigate("journal", { journalDate: key });
+                            }
                           : undefined
                       }
                       onKeyDown={
@@ -192,6 +264,34 @@ export function DreamCalendar({ days }: { days: CalendarDay[] }) {
                           : undefined
                       }
                       onMouseLeave={() => setHovered((h) => (h?.key === key ? null : h))}
+                      // r7 — long-press support: arm a timer on touchstart, cancel
+                      // on movement (scroll), and let touchend fall through to
+                      // onClick unless the long-press fired (in which case
+                      // longPressArmed.current gates it).
+                      onTouchStart={
+                        entry && !isFuture
+                          ? (e) => {
+                              const el = e.currentTarget as HTMLElement;
+                              armLongPress(e, entry, key, el);
+                            }
+                          : undefined
+                      }
+                      onTouchMove={
+                        entry && !isFuture
+                          ? (e) => {
+                              const el = e.currentTarget as HTMLElement;
+                              cancelLongPressMaybe(e, el);
+                            }
+                          : undefined
+                      }
+                      onTouchEnd={
+                        entry && !isFuture
+                          ? () => {
+                              clearLongPress();
+                            }
+                          : undefined
+                      }
+                      onTouchCancel={clearLongPress}
                       className="h-[13px] w-[13px] rounded-[3px] relative z-0 hover:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-foreground"
                       style={{
                         background: color ? color : "var(--muted, rgba(65,63,61,0.06))",

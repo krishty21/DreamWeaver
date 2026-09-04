@@ -1,6 +1,6 @@
 "use client";
 
-import { Moon, Sparkles, BookOpenText, Map, Compass, User, LogOut } from "lucide-react";
+import { Moon, Sparkles, BookOpenText, Map, Compass, User, LogOut, Globe } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import { useApp, View } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -11,6 +11,7 @@ const NAV: { view: View; label: string; icon: any }[] = [
   { view: "capture", label: "Capture", icon: Sparkles },
   { view: "journal", label: "Journal", icon: BookOpenText },
   { view: "patterns", label: "Patterns", icon: Map },
+  { view: "atlas", label: "Atlas", icon: Globe },
   { view: "arcade", label: "Arcade", icon: Compass },
 ];
 
@@ -145,7 +146,7 @@ export function Footer() {
         </div>
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <span className="hidden md:inline-flex items-center gap-1.5" aria-hidden="true">
-            <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70">C</kbd>
+            <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70">⌘K</kbd>
             capture
             <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70 ml-1.5">J</kbd>
             journal

@@ -137,6 +137,26 @@ export type CalendarDay = {
   titles: string[];
 };
 
+// r7: timeline point — one dream's place in the longitudinal arc, used by
+// the Atlas view to render a chronological motif map.
+export type TimelinePoint = {
+  dreamId: string;
+  date: string; // ISO
+  title: string;
+  mood: Mood;
+  motifCount: number;
+  fear: number; // 0..1
+  lucidity: number; // 0..1
+};
+
+// r7: full motif catalog (Atlas view) — every motif/person/place/action the
+// user has ever recorded, with the same frequency shape as topMotifs. The
+// Atlas view groups by `type` ("symbol" | "person" | "place" | "action").
+export type AtlasEntry = MotifFrequency & {
+  moodBreakdown: { mood: Mood; count: number }[];
+  note?: string | null;
+};
+
 export type PatternReport = {
   totalDreams: number;
   totalSessions: number;
@@ -147,4 +167,7 @@ export type PatternReport = {
   recurringPairs: { a: string; b: string; count: number }[];
   earliestDream: string | null;
   latestDream: string | null;
+  // r7 — exhaustive catalog used by the Atlas view
+  atlas: AtlasEntry[];
+  timeline: TimelinePoint[];
 };

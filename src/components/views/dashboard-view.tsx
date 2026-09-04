@@ -130,10 +130,15 @@ export function DashboardView() {
       ? "A quiet moment to look back."
       : "The night ahead has room for dreams.";
 
-  // r6: tonight's reflection prompt. Deterministic per-day rotation so the
+  // r7: tonight's reflection prompt. Deterministic per-day rotation so the
   // same prompt is shown all day (no flickering between renders), and the
   // prompt set reflects the time of day (morning prompts favour recall,
   // evening prompts favour intention).
+  //
+  // r7 enhancement: when the user has recurring motifs, the prompt becomes
+  // personalised — it names the user's strongest recurring motif and asks
+  // them to notice / invite it. Static rotation only kicks in when there
+  // isn't enough pattern data yet (fewer than 2 dreams or no recurring motif).
   const promptSeed = Math.floor(Date.now() / 86400000);
   const eveningPrompts = [
     "Carry one question into sleep tonight. What would you like the dream to answer?",
@@ -150,8 +155,19 @@ export function DashboardView() {
     "Don't explain it yet. Just describe the room you were in.",
   ];
   const promptSet = hour < 12 && hour >= 5 ? morningPrompts : eveningPrompts;
-  const tonightPrompt = promptSet[promptSeed % promptSet.length];
+  const fallbackPrompt = promptSet[promptSeed % promptSet.length];
   const promptKind = hour < 12 && hour >= 5 ? "Morning recall" : "Tonight's prompt";
+
+  // r7 — personalised prompt: when the user has a top recurring motif, swap
+  // the static rotation for a line that names that motif. The motif is
+  // already computed app-side (no model calls) so this is cheap. Stable
+  // for the day because topMotifs doesn't change between renders.
+  const topRecurring = (report?.topMotifs ?? []).find((m) => m.count >= 2);
+  const tonightPrompt = topRecurring
+    ? hour < 12 && hour >= 5
+      ? `"${topRecurring.label}" returned again last time. Notice whether it finds you tonight.`
+      : `Tonight, watch for "${topRecurring.label}". It has returned ${topRecurring.count} times — invite it closer.`
+    : fallbackPrompt;
 
   // r6: streak microcopy — celebrate an active streak with a one-line whisper
   // that sits beside the hero greeting. Doesn't replace the stat tile; it gives
@@ -171,6 +187,7 @@ export function DashboardView() {
         className="flex flex-col sm:flex-row sm:items-end justify-between gap-6"
       >
         <div className="min-w-0">
+          <div className="page-rule mb-3" aria-hidden="true" />
           <div className="text-xs tracking-caps uppercase text-muted-foreground mb-2 flex items-center gap-2 flex-wrap">
             <GreetIcon className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
             {greeting}
