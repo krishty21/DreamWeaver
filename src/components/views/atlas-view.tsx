@@ -15,14 +15,21 @@ import {
   Minus,
   ArrowRight,
   Search,
+  Layers,
+  ChevronDown,
+  Clock,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useMemo } from "react";
-import type { AtlasEntry, PatternReport, TimelinePoint } from "@/lib/types";
+import type { AtlasEntry, Mood, PatternReport, TimelinePoint } from "@/lib/types";
 import { MOOD_COLORS, MOODS } from "@/lib/moods";
 
 async function fetchPatterns() {
   const res = await fetch("/api/patterns");
+  return res.json();
+}
+async function fetchDreams() {
+  const res = await fetch("/api/dreams");
   return res.json();
 }
 
@@ -35,9 +42,24 @@ const TYPE_LABELS: Record<string, { label: string; icon: any }> = {
 
 const TYPE_ORDER: string[] = ["symbol", "person", "place", "action"];
 
+// Lightweight dream metadata for the Atlas "Browse N dreams" stacked list.
+// We already have dreamIds on each AtlasEntry; we just need to look them up
+// to render a row per dream (date, title, mood, motif note if any).
+type DreamMeta = {
+  id: string;
+  title: string | null;
+  createdAt: string;
+  mood: Mood | "neutral";
+  motifNote?: string | null;
+};
+
 export function AtlasView() {
   const navigate = useApp((s) => s.navigate);
   const { data, isLoading } = useQuery({ queryKey: ["patterns"], queryFn: fetchPatterns });
+  // r8 — also fetch the dreams list so we can map dreamIds → titles/dates/moods
+  // for the per-card "Browse N dreams" stacked list. The journal and dashboard
+  // already request this same endpoint, so react-query dedupes the request.
+  const { data: dreamsData } = useQuery({ queryKey: ["dreams"], queryFn: fetchDreams });
   const report = data?.report as PatternReport | undefined;
 
   const [query, setQuery] = useState("");
@@ -45,6 +67,34 @@ export function AtlasView() {
 
   const atlas = report?.atlas ?? [];
   const timeline = report?.timeline ?? [];
+  const recurringPairs = report?.recurringPairs ?? [];
+
+  // Build a dreamId → DreamMeta lookup, including the per-dream motif note
+  // for this atlas entry if present. The motifs array on each dream contains
+  // {label, type, note} — we find the entry whose label matches (case-insensitive)
+  // to surface its note alongside the row.
+  const dreamMap = useMemo(() => {
+    const m = new Map<string, DreamMeta>();
+    for (const d of dreamsData?.dreams ?? []) {
+      m.set(d.id, {
+        id: d.id,
+        title: d.title ?? null,
+        createdAt: d.createdAt,
+        mood: (d.mood as Mood) ?? "neutral",
+      });
+    }
+    return m;
+  }, [dreamsData]);
+
+  // Lookup the per-dream motif note for a specific (atlasEntry, dreamId) pair.
+  function motifNoteFor(entry: AtlasEntry, dreamId: string): string | null {
+    const d = (dreamsData?.dreams ?? []).find((x: any) => x.id === dreamId);
+    if (!d) return null;
+    const match = (d.motifs ?? []).find(
+      (m: any) => String(m.label).toLowerCase() === entry.label.toLowerCase()
+    );
+    return match?.note ?? null;
+  }
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -225,6 +275,8 @@ export function AtlasView() {
                       entry={e}
                       index={i}
                       max={atlas[0]?.count || 1}
+                      dreamMap={dreamMap}
+                      motifNoteFor={motifNoteFor}
                       onOpen={(id) => navigate("dream", { dreamId: id })}
                     />
                   ))}
@@ -249,6 +301,37 @@ export function AtlasView() {
           </div>
         )}
       </div>
+
+      {/* r8 — motif co-occurrence panel. Surface the recurringPairs that
+          patterns.ts already computes (pairs that appear together in >=2
+          dreams). Sits at the bottom of the atlas as a closing insight. */}
+      {recurringPairs.length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.12 }}
+          className="mt-12 surface p-6"
+          aria-label="Motifs that travel together"
+        >
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
+            <Layers className="h-4 w-4 text-muted-foreground" strokeWidth={1.6} aria-hidden="true" />
+            <h2 className="font-display text-2xl tracking-tight">Motifs that travel together</h2>
+            <span className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground tracking-caps uppercase">
+              {recurringPairs.length} pair{recurringPairs.length === 1 ? "" : "s"}
+            </span>
+          </div>
+          <p className="text-sm text-muted-foreground pretty mb-4">
+            Pairs of motifs that have shown up in the same dream — the recurring
+            combinations of your interior world.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {recurringPairs.map((p, i) => (
+              <CoOccurrenceChip key={`${p.a}-${p.b}`} a={p.a} b={p.b} count={p.count} index={i} />
+            ))}
+          </div>
+        </motion.section>
+      )}
     </div>
   );
 }
@@ -285,15 +368,54 @@ function FilterChip({
   );
 }
 
+// r8 — Co-occurrence chip: shows "motif a · motif b" with a "× N" badge.
+// Both motif labels are clickable as a unit, but we keep them visually
+// separated so the pair reads as a pair.
+function CoOccurrenceChip({
+  a,
+  b,
+  count,
+  index,
+}: {
+  a: string;
+  b: string;
+  count: number;
+  index: number;
+}) {
+  return (
+    <motion.span
+      initial={{ opacity: 0, y: 4 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25, delay: Math.min(index * 0.04, 0.4) }}
+      className="co-occurrence-chip inline-flex items-center gap-2 px-3 py-1.5 rounded-full surface-quiet lift"
+      title={`These motifs have appeared together in ${count} of your dreams.`}
+    >
+      <span className="capitalize text-sm">{a}</span>
+      <span className="text-muted-foreground/50 text-[10px] tracking-caps uppercase">·</span>
+      <span className="capitalize text-sm">{b}</span>
+      <span
+        className="font-data text-[10px] tracking-caps uppercase rounded-full px-1.5 py-0.5 bg-foreground/[0.06] text-foreground/70"
+        aria-label={`appeared together in ${count} dreams`}
+      >
+        ×{count}
+      </span>
+    </motion.span>
+  );
+}
+
 function AtlasCard({
   entry,
   index,
   max,
+  dreamMap,
+  motifNoteFor,
   onOpen,
 }: {
   entry: AtlasEntry;
   index: number;
   max: number;
+  dreamMap: Map<string, DreamMeta>;
+  motifNoteFor: (entry: AtlasEntry, dreamId: string) => string | null;
   onOpen: (dreamId: string) => void;
 }) {
   const trendIcon =
@@ -309,6 +431,20 @@ function AtlasCard({
   // Mood spectrum — a tiny stacked bar showing the distribution of moods
   // across the dreams this entry appeared in.
   const total = entry.moodBreakdown.reduce((s, x) => s + x.count, 0) || 1;
+
+  // r8 — expandable "Browse N dreams" panel. Clicking the toggle reveals an
+  // inline list of every dream containing this motif, sorted newest-first,
+  // each clickable to open the dream detail view. Replaces the previous
+  // "Open last" affordance, which only opened the most recent occurrence.
+  const [expanded, setExpanded] = useState(false);
+  const dreams = entry.dreamIds
+    .map((id) => {
+      const meta = dreamMap.get(id);
+      if (!meta) return null;
+      return { ...meta, motifNote: motifNoteFor(entry, id) };
+    })
+    .filter(Boolean)
+    .sort((a: any, b: any) => (a.createdAt < b.createdAt ? 1 : -1)); // newest first
 
   return (
     <motion.article
@@ -384,13 +520,73 @@ function AtlasCard({
           {entry.dreamIds.length} dream{entry.dreamIds.length === 1 ? "" : "s"}
         </span>
         <button
-          onClick={() => onOpen(entry.dreamIds[entry.dreamIds.length - 1])}
-          className="inline-flex items-center gap-1 text-xs text-foreground hover:opacity-70"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          aria-controls={`atlas-dreams-${entry.label.replace(/\s+/g, "-").toLowerCase()}`}
+          className="atlas-browse-btn inline-flex items-center gap-1 text-xs text-foreground hover:opacity-70 focus-ring rounded"
         >
-          Open last
-          <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition" strokeWidth={1.6} aria-hidden="true" />
+          <Layers className="h-3 w-3" strokeWidth={1.6} aria-hidden="true" />
+          {entry.dreamIds.length === 1 ? "Open the dream" : `Browse ${entry.dreamIds.length} dreams`}
+          <ChevronDown
+            className={`h-3 w-3 transition-transform ${expanded ? "rotate-180" : ""}`}
+            strokeWidth={1.6}
+            aria-hidden="true"
+          />
         </button>
       </div>
+
+      {/* r8 — expandable stacked list of every dream containing this motif. */}
+      <AnimatePresence initial={false}>
+        {expanded && (
+          <motion.div
+            id={`atlas-dreams-${entry.label.replace(/\s+/g, "-").toLowerCase()}`}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="atlas-dreams-stack overflow-hidden mt-3 -mx-1 sm:mx-0"
+          >
+            <ul className="space-y-1">
+              {dreams.map((d: any) => (
+                <li key={d.id}>
+                  <button
+                    onClick={() => onOpen(d.id)}
+                    className="atlas-dream-row w-full text-left px-2 sm:px-3 py-2 rounded-md flex items-center gap-3 hover:bg-foreground/[0.04] focus-ring transition"
+                    aria-label={`Open dream: ${d.title ?? "Untitled dream"}, ${new Date(d.createdAt).toLocaleDateString()}`}
+                  >
+                    <span
+                      className="mood-dot shrink-0"
+                      style={{ background: MOOD_COLORS[d.mood as Mood] ?? MOOD_COLORS.neutral }}
+                      aria-hidden="true"
+                    />
+                    <span className="font-data text-[10px] text-muted-foreground tracking-caps uppercase shrink-0 w-14 tabular-nums">
+                      {new Date(d.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                    </span>
+                    <span className="flex-1 min-w-0 truncate text-sm font-display">
+                      {d.title || "Untitled dream"}
+                    </span>
+                    {d.motifNote && (
+                      <span className="hidden sm:inline text-[11px] text-muted-foreground italic line-clamp-1 max-w-[40%]">
+                        {d.motifNote}
+                      </span>
+                    )}
+                    <ArrowRight className="h-3 w-3 shrink-0 opacity-50 group-hover:opacity-100 transition" strokeWidth={1.6} aria-hidden="true" />
+                  </button>
+                </li>
+              ))}
+              {dreams.length === 0 && (
+                <li className="px-3 py-2 text-xs text-muted-foreground italic">
+                  No dreams found.
+                </li>
+              )}
+            </ul>
+            <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground italic">
+              <Clock className="h-2.5 w-2.5" strokeWidth={1.6} aria-hidden="true" />
+              newest first · {dreams.length} of {entry.dreamIds.length} shown
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.article>
   );
 }

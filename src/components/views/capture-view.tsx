@@ -231,7 +231,7 @@ export function CaptureView() {
             <span className="text-foreground">speak it</span> and read it back after.
           </p>
 
-          <div className="mt-7 surface p-1.5">
+          <div className="mt-7 surface p-1.5 capture-surface">
             <AnimatePresence mode="wait">
               {voice === "recording" ? (
                 <motion.div

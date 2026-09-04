@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { ttsCacheGet, ttsCacheKey, ttsCacheSet } from "@/lib/tts-cache";
 
 // POST /api/tts — text-to-speech for a dream.
 // Receives a `text` payload (or a `dreamId` to load the dream's raw text +
@@ -126,6 +127,32 @@ export async function POST(req: Request) {
       : 0.9;
 
   const chunks = splitIntoChunks(text);
+
+  // r8 — server-side audio cache. Keyed by the spoken text + voice + speed so
+  // a re-reflect (which changes the summary + title) invalidates correctly.
+  // The first listen synthesises (~12-15s); subsequent listens return the
+  // cached WAV in sub-100ms. The cache is in-memory only — restarting the
+  // dev server cold-starts it.
+  const cacheKey = ttsCacheKey(text, voice, speed);
+  const cached = ttsCacheGet(cacheKey);
+  if (cached) {
+    return new NextResponse(cached, {
+      status: 200,
+      headers: {
+        "Content-Type": "audio/wav",
+        "Content-Length": cached.length.toString(),
+        // The browser shouldn't store the audio locally — the in-memory
+        // server cache is the source of truth and a re-reflect invalidates
+        // it. no-store keeps the client re-checking the server.
+        "Cache-Control": "no-store",
+        // Surface the cache state so the client UI can show a "cached"
+        // affordance (helps the user trust that the second listen is
+        // genuinely faster, not just buffered).
+        "X-TTS-Cache": "hit",
+      },
+    });
+  }
+
   let zai: any;
   try {
     zai = await ZAI.create();
@@ -153,12 +180,15 @@ export async function POST(req: Request) {
 
     // Single chunk — return as-is.
     if (audioBuffers.length === 1) {
-      return new NextResponse(audioBuffers[0], {
+      const out = audioBuffers[0];
+      ttsCacheSet(cacheKey, out);
+      return new NextResponse(out, {
         status: 200,
         headers: {
           "Content-Type": "audio/wav",
-          "Content-Length": audioBuffers[0].length.toString(),
+          "Content-Length": out.length.toString(),
           "Cache-Control": "no-store",
+          "X-TTS-Cache": "miss",
         },
       });
     }
@@ -170,12 +200,14 @@ export async function POST(req: Request) {
     const totalLen = bodies.reduce((s, b) => s + b.length, 0);
     const header = writeWavHeader(totalLen);
     const out = Buffer.concat([header, ...bodies], header.length + totalLen);
+    ttsCacheSet(cacheKey, out);
     return new NextResponse(out, {
       status: 200,
       headers: {
         "Content-Type": "audio/wav",
         "Content-Length": out.length.toString(),
         "Cache-Control": "no-store",
+        "X-TTS-Cache": "miss",
       },
     });
   } catch (e: any) {

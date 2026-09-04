@@ -474,6 +474,10 @@ function DreamAudioPlayer({
   const [position, setPosition] = useState(0); // seconds
   const [duration, setDuration] = useState(0); // seconds
   const [rate, setRate] = useState(0.9); // TTS speed, 0.5..2.0
+  // r8 — surface the cache state so the user can tell that the second listen
+  // was served from the server cache (sub-100ms) vs. freshly synthesised.
+  // "fresh" = synthesised on this request; "cached" = served from cache.
+  const [cacheState, setCacheState] = useState<"fresh" | "cached" | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objectUrlRef = useRef<string | null>(null);
 
@@ -481,6 +485,7 @@ function DreamAudioPlayer({
     let cancelled = false;
     async function synthesise() {
       setStatus("loading");
+      setCacheState(null);
       try {
         const res = await fetch("/api/tts", {
           method: "POST",
@@ -491,6 +496,10 @@ function DreamAudioPlayer({
           const err = await res.json().catch(() => ({}));
           throw new Error(err.message || "Could not synthesise this dream.");
         }
+        // r8 — read the X-TTS-Cache header. The route sets "hit" on cache
+        // retrieval, "miss" on fresh synthesis.
+        const cacheHeader = res.headers.get("X-TTS-Cache");
+        if (!cancelled) setCacheState(cacheHeader === "hit" ? "cached" : "fresh");
         const blob = await res.blob();
         if (cancelled) return;
         // Revoke any prior URL (rate-change re-fetch).
@@ -567,8 +576,26 @@ function DreamAudioPlayer({
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-[11px] tracking-caps uppercase text-muted-foreground">
-                Spoken reflection
+              <div className="text-[11px] tracking-caps uppercase text-muted-foreground flex items-center gap-2">
+                <span>Spoken reflection</span>
+                {cacheState === "cached" && (
+                  <span
+                    className="tts-cached-pill inline-flex items-center gap-1 normal-case tracking-normal text-[10px] px-1.5 py-0.5 rounded-full"
+                    title="Served from the server audio cache — a fresh narration is only woven the first time."
+                  >
+                    <span className="tts-cached-dot" aria-hidden="true" />
+                    cached
+                  </span>
+                )}
+                {cacheState === "fresh" && (
+                  <span
+                    className="tts-fresh-pill inline-flex items-center gap-1 normal-case tracking-normal text-[10px] px-1.5 py-0.5 rounded-full"
+                    title="This narration was freshly woven by Gemini TTS just now."
+                  >
+                    <Sparkles className="h-2.5 w-2.5" strokeWidth={1.8} aria-hidden="true" />
+                    fresh weave
+                  </span>
+                )}
               </div>
               <div className="font-display text-lg truncate">{title}</div>
             </div>

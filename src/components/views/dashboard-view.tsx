@@ -3,8 +3,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map as MapIcon, ArrowRight, TrendingUp, Gamepad2, CalendarCheck2, BookOpenText, Quote, Clock } from "lucide-react";
+import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map as MapIcon, ArrowRight, TrendingUp, Gamepad2, CalendarCheck2, BookOpenText, Quote, Clock, TrendingDown, Waypoints } from "lucide-react";
 import { motion } from "framer-motion";
+import { useMemo } from "react";
 import { MOOD_COLORS } from "@/lib/moods";
 import type { Mood } from "@/lib/types";
 
@@ -60,6 +61,113 @@ function dreamStats(dreams: { createdAt: string }[]) {
     prev = d;
   }
   return { streak, nightsRemembered, longestStreak: Math.max(longest, streak) };
+}
+
+// r8 — longitudinal insight. A single derived sentence computed app-side
+// from the patterns data (no model calls). Picks the most "interesting"
+// signal available based on data strength. Returns null when there isn't
+// enough pattern data yet (fewer than 3 dreams with analysis).
+//
+// Priority order (the first one that fires wins):
+//   1. Fear trend (rising or falling across >=3 dreams with analysis)
+//   2. Lucidity trend (rising across >=3 dreams)
+//   3. Mood clustering (a single mood appears in >=50% of >=3 dreams)
+//   4. Mood diversity (>=3 distinct moods across >=3 dreams)
+//   5. Cadence (a streak of >=2 — already celebrated, but framed as cadence)
+type InsightResult = {
+  kind: "fear-rising" | "fear-falling" | "lucidity-rising" | "mood-cluster" | "mood-diversity" | "cadence";
+  icon: any;
+  sentence: string;
+  footer: string;
+};
+
+function deriveInsight(
+  report: any,
+  dreams: any[]
+): InsightResult | null {
+  if (!report) return null;
+  const trend = report.emotionalTrend ?? [];
+  if (trend.length < 3) return null;
+
+  // 1 — Fear trend. Compare the average of the most recent half against the
+  // first half. The trend array is oldest-first.
+  const half = Math.floor(trend.length / 2);
+  const early = trend.slice(0, half);
+  const late = trend.slice(half);
+  const avg = (arr: any[]) =>
+    arr.reduce((s, x) => s + (x.fear ?? 0), 0) / (arr.length || 1);
+  const earlyFear = avg(early);
+  const lateFear = avg(late);
+  const fearDelta = lateFear - earlyFear;
+  // Threshold: 8 points on a 0-100 scale. Anything less is "stable".
+  if (fearDelta >= 8) {
+    return {
+      kind: "fear-rising",
+      icon: TrendingUp,
+      sentence: `Fear has been rising across your last ${trend.length} dreams — up ${Math.round(fearDelta)} points from where it began.`,
+      footer: `derived from ${trend.length} dream analyses`,
+    };
+  }
+  if (fearDelta <= -8) {
+    return {
+      kind: "fear-falling",
+      icon: TrendingDown,
+      sentence: `Fear has eased across your last ${trend.length} dreams — down ${Math.round(Math.abs(fearDelta))} points from where it began.`,
+      footer: `derived from ${trend.length} dream analyses`,
+    };
+  }
+
+  // 2 — Lucidity trend. Same comparison, but for lucidity.
+  const earlyLuc = early.reduce((s, x) => s + (x.lucidity ?? 0), 0) / (early.length || 1);
+  const lateLuc = late.reduce((s, x) => s + (x.lucidity ?? 0), 0) / (late.length || 1);
+  const lucDelta = lateLuc - earlyLuc;
+  if (lucDelta >= 8) {
+    return {
+      kind: "lucidity-rising",
+      icon: Waypoints,
+      sentence: `Lucidity is rising — you noticed more in your last dreams than your first. Up ${Math.round(lucDelta)} points.`,
+      footer: `derived from ${trend.length} dream analyses`,
+    };
+  }
+
+  // 3 — Mood clustering. If one mood appears in >=50% of >=3 dreams, name it.
+  const moodDist = report.moodDistribution ?? [];
+  const totalDreams = report.totalDreams ?? dreams.length;
+  if (totalDreams >= 3 && moodDist.length > 0) {
+    const top = [...moodDist].sort((a, b) => b.count - a.count)[0];
+    if (top && top.count >= Math.ceil(totalDreams * 0.5)) {
+      return {
+        kind: "mood-cluster",
+        icon: Moon,
+        sentence: `Your dreams cluster around the ${top.mood} — ${top.count} of ${totalDreams} nights have landed there.`,
+        footer: `derived from ${totalDreams} dream moods`,
+      };
+    }
+  }
+
+  // 4 — Mood diversity. >=3 distinct moods across >=3 dreams.
+  if (totalDreams >= 3 && moodDist.length >= 3) {
+    return {
+      kind: "mood-diversity",
+      icon: Waypoints,
+      sentence: `Your dreams span ${moodDist.length} moods — a wide interior weather, not a single climate.`,
+      footer: `derived from ${totalDreams} dream moods`,
+    };
+  }
+
+  // 5 — Cadence (streak of >=2 nights — already celebrated in the eyebrow
+  // but framed here as longitudinal cadence).
+  const stats = dreamStats(dreams);
+  if (stats.streak >= 2) {
+    return {
+      kind: "cadence",
+      icon: CalendarCheck2,
+      sentence: `${stats.streak} nights in a row of remembering — a steady thread, not a single pull.`,
+      footer: `derived from ${dreams.length} dream timestamps`,
+    };
+  }
+
+  return null;
 }
 
 // Rank revisit candidates: motifs that recur across dreams carry weight;
@@ -195,6 +303,7 @@ export function DashboardView() {
             {streakLine && (
               <span className="ml-1 inline-flex items-center gap-1.5 text-foreground/70 normal-case tracking-normal">
                 <span className="h-px w-3 bg-border" />
+                <span className="streak-pulse-dot" aria-hidden="true" />
                 {streakLine}
               </span>
             )}
@@ -287,6 +396,14 @@ export function DashboardView() {
               </div>
             </div>
           </motion.button>
+
+          {/* r8 — longitudinal insight. A single derived sentence computed
+              app-side from the patterns data (no model calls). Surfaces the
+              strongest available signal: fear trend, lucidity trend, mood
+              clustering, mood diversity, or cadence. Sits between the prompt
+              and the deep content so the user sees a "here's what's been
+              happening" line before diving back in. */}
+          <LongitudinalInsight report={report} dreams={dreams} />
 
           <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Recent dream — big. r6: mood-accented with a soft glow and motif chips. */}
@@ -536,8 +653,22 @@ function Sparkline({ points }: { points: number[] }) {
       return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
     })
     .join(" ");
+  // r8 — soft area fill below the line. Goes from the first point across the
+  // line, then down to the bottom-right, then to the bottom-left, then closes.
+  // The fill is a vertical gradient from a faint rose to transparent so the
+  // shape reads as a soft hill, not a solid block.
+  const lastX = (points.length - 1) * step;
+  const firstX = 0;
+  const areaPath = `${path} L${lastX.toFixed(1)},${h} L${firstX.toFixed(1)},${h} Z`;
   return (
     <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-16" preserveAspectRatio="none">
+      <defs>
+        <linearGradient id="spark-area" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--rose)" stopOpacity="0.55" />
+          <stop offset="100%" stopColor="var(--rose)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill="url(#spark-area)" stroke="none" />
       <path d={path} fill="none" stroke="var(--slate)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
       {points.map((p, i) => {
         const x = i * step;
@@ -545,6 +676,53 @@ function Sparkline({ points }: { points: number[] }) {
         return <circle key={i} cx={x} cy={y} r={2.5} fill="var(--ink)" />;
       })}
     </svg>
+  );
+}
+
+// r8 — Longitudinal insight card. Renders the strongest available derived
+// insight (fear trend / lucidity trend / mood clustering / mood diversity /
+// cadence) as a quiet editorial card. Doesn't navigate — it just observes.
+// Returns null when deriveInsight returns null (insufficient data).
+function LongitudinalInsight({ report, dreams }: { report: any; dreams: any[] }) {
+  const insight = useMemo(() => deriveInsight(report, dreams), [report, dreams]);
+  if (!insight) return null;
+  const Icon = insight.icon;
+  // A small label that maps the insight kind to a human-readable label.
+  const kindLabel: Record<string, string> = {
+    "fear-rising": "fear · rising",
+    "fear-falling": "fear · easing",
+    "lucidity-rising": "lucidity · rising",
+    "mood-cluster": "mood · clustering",
+    "mood-diversity": "mood · diversity",
+    cadence: "cadence · steady",
+  };
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.1 }}
+      className="mt-5 surface p-5 sm:p-6 flex items-start gap-4 lift"
+      aria-label="Longitudinal insight"
+    >
+      <div className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.05] text-foreground/70">
+        <Icon className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] tracking-caps uppercase text-muted-foreground mb-1.5 flex items-center gap-2">
+          <span>Longitudinal insight</span>
+          <span className="h-px w-3 bg-border" />
+          <span className="font-data text-[10px] normal-case tracking-normal">{kindLabel[insight.kind]}</span>
+        </div>
+        <p className="font-display italic text-lg sm:text-xl leading-snug text-foreground/90 pretty balance">
+          {insight.sentence}
+        </p>
+        <div className="mt-2 flex items-center gap-1.5 text-[10px] text-muted-foreground italic">
+          <span className="font-data not-italic tracking-caps uppercase">{insight.footer}</span>
+          <span aria-hidden="true">·</span>
+          <span>computed app-side, never the model</span>
+        </div>
+      </div>
+    </motion.section>
   );
 }
 
