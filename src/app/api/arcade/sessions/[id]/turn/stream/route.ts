@@ -4,7 +4,8 @@ import { getRepository } from "@/lib/data/repository";
 import { generateArcadeTurnStreaming } from "@/lib/ai";
 import { applyDelta, endingText } from "@/lib/simulation";
 import { computeMemoryEcho } from "@/lib/memory-graph";
-import { acquireLock, lockKey, rateLimit, rateKey } from "@/lib/rate-limit";
+import { acquireArcadeLock } from "@/lib/distributed-lock";
+import { rateLimit, rateKey } from "@/lib/rate-limit";
 import type { SimulationState, DreamLaw } from "@/lib/types";
 import { z } from "zod";
 
@@ -80,8 +81,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // streaming path the lock lives across the whole background turn and is
   // released in the finally of the IIFE below. If a second request arrives
   // while the first is still streaming, it gets 409 and the client shows a
-  // clear "a turn is already forming" message.
-  const lock = acquireLock(lockKey("arcade-turn", session.id), { ttlMs: 90_000 });
+  // clear "a turn is already forming" message. The lock is DISTRIBUTED
+  // (Firestore document + transaction) when DATA_BACKEND=firestore, so it
+  // holds across Cloud Run instances; the in-memory lock is used for local
+  // single-process dev.
+  const lock = await acquireArcadeLock(session.id, { ttlMs: 90_000 });
   if (!lock.acquired) {
     return NextResponse.json(
       { error: "A turn for this dream is already forming. Let it settle before acting again." },
@@ -90,7 +94,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const rl = rateLimit(rateKey("arcade-turn", userId), { max: 30, windowMs: 60_000 });
   if (!rl.ok) {
-    lock.release();
+    await lock.release();
     return NextResponse.json(
       { error: "You're moving through the dream a little too fast. Pause for a moment." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
@@ -257,7 +261,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       try { writer.close(); } catch {}
       // r12 — release the per-session single-flight lock so the next turn
       // can proceed immediately (rather than waiting for the TTL).
-      lock.release();
+      try { await lock.release(); } catch {}
     }
   })();
 

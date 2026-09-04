@@ -2,7 +2,7 @@
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
-import { signOut } from "next-auth/react";
+import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Loader2, Trash2, ShieldCheck, Lock, Layers, LogOut, Database, AlertTriangle, Trophy, Sparkles, Repeat, PenLine, CalendarHeart, Sunrise } from "lucide-react";
 import { motion } from "framer-motion";
@@ -28,6 +28,7 @@ export function ProfileView() {
   const navigate = useApp((s) => s.navigate);
   const qc = useQueryClient();
   const { toast } = useToast();
+  const { signOut } = useAuth();
   const { data } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
   const user = data?.user;
   // r9 — records strip. Both queries are already cached by the journal /
@@ -102,7 +103,7 @@ export function ProfileView() {
             <Row label="Sessions" value={user.sessionCount} />
           </dl>
           <Button
-            onClick={() => signOut({ redirect: false })}
+            onClick={() => signOut()}
             variant="outline"
             className="mt-5 h-10"
           >

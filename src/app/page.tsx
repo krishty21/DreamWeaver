@@ -1,6 +1,6 @@
 "use client";
 
-import { useSession } from "next-auth/react";
+import { useAuth } from "@/components/auth-provider";
 import { useApp, View } from "@/lib/store";
 import { useAuthRouting } from "@/lib/use-auth-routing";
 import dynamic from "next/dynamic";
@@ -82,7 +82,7 @@ function viewFallback() {
 }
 
 export default function Home() {
-  const { status } = useSession();
+  const { status } = useAuth();
   const view = useApp((s) => s.view);
   const mounted = useApp((s) => s.mounted);
   const syncFromHash = useApp((s) => s.syncFromHash);

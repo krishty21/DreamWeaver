@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn, useSession } from "next-auth/react";
+import { useAuth, type AuthResult } from "@/components/auth-provider";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,11 +11,31 @@ import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { DreamMark } from "@/components/shell/top-nav";
 
+// Auth view — single implementation that works for BOTH auth backends
+// (production Firebase client SDK + local-dev NextAuth) via the unified
+// `useAuth()` contract from src/components/auth-provider.tsx.
+//
+// The browser genuinely uses the Firebase client SDK in production:
+//   - signInWithPassword() → createUserWithEmailAndPassword /
+//     signInWithEmailAndPassword (firebase/auth) → onAuthStateChanged fires
+//     → ID token POSTed to /api/auth/firebase-login → server verifies via
+//     firebase-admin → signed HttpOnly cookie established.
+// In local dev the same call dispatches to NextAuth signIn("credentials").
+//
+// ERROR HANDLING — non-enumerating + specific-but-safe:
+//   - Sign-in: ONE generic "email or password is incorrect" for any failure
+//     (wrong password, unknown email, disabled account, malformed email).
+//     Never reveals whether an email exists.
+//   - Sign-up: duplicate email is named (the user just typed it; not
+//     enumeration). Weak password + invalid email are client-validated
+//     before the network call.
+//   - Network/server failures get a calm generic message; no stack traces.
+
 export function AuthView() {
   const authMode = useApp((s) => s.authMode);
   const navigate = useApp((s) => s.navigate);
   const { toast } = useToast();
-  const { update: updateSession } = useSession();
+  const { signInWithPassword } = useAuth();
 
   const [mode, setMode] = useState<"signin" | "signup">(authMode);
   const [email, setEmail] = useState("");
@@ -43,36 +63,42 @@ export function AuthView() {
     }
 
     setLoading(true);
-    const res = await signIn("credentials", {
-      email,
+    const res: AuthResult = await signInWithPassword(
+      email.trim().toLowerCase(),
       password,
-      name: mode === "signup" ? name : undefined,
       mode,
-      redirect: false,
-    });
-    if (res?.error) {
-      setLoading(false);
-      // The server returns a single generic CredentialsSignin for any failure.
-      // For sign-in we never reveal whether the email exists. For sign-up the
-      // only remaining server-side failure (after client validation) is a
-      // duplicate email, which the user just typed — so naming it is not
-      // enumeration.
-      toast({
-        title: mode === "signup" ? "Could not create account" : "Sign in failed",
-        description:
-          mode === "signup"
-            ? "An account with this email already exists."
-            : "Email or password is incorrect.",
-        variant: "destructive",
-      });
+      mode === "signup" ? name.trim() || undefined : undefined
+    );
+    setLoading(false);
+
+    if (!res.ok) {
+      // Map the unified error keys to user-facing copy. One generic for
+      // sign-in; duplicate-named for sign-up.
+      const isSignup = mode === "signup";
+      const title = isSignup ? "Could not create account" : "Sign in failed";
+      let description: string;
+      if (res.error === "email-exists") {
+        description = "An account with this email already exists.";
+      } else if (res.error === "weak-password") {
+        description = "Choose a stronger password (at least 6 characters).";
+      } else if (res.error === "invalid-email") {
+        description = "Enter a valid email address.";
+      } else if (res.error === "rate-limited") {
+        description = "Too many attempts. Pause a moment and try again.";
+      } else if (res.error === "network") {
+        description = "Couldn't reach the server. Check your connection.";
+      } else if (!isSignup) {
+        description = "Email or password is incorrect.";
+      } else {
+        description = "Something went wrong. Try again.";
+      }
+      toast({ title, description, variant: "destructive" });
       return;
     }
-    // Refresh the session provider in-place (no brute-force page reload), then
-    // route to the dashboard. useAuthRouting watches `status` and will keep
-    // the user on dashboard once the provider flips to "authenticated".
-    try { await updateSession(); } catch {}
+    // The auth provider's onAuthStateChanged / NextAuth session refresh will
+    // flip status to "authenticated"; useAuthRouting watches and routes to
+    // the dashboard.
     navigate("dashboard");
-    setLoading(false);
   }
 
   return (

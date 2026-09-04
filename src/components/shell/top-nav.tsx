@@ -1,7 +1,7 @@
 "use client";
 
 import { Moon, PenLine, BookOpenText, Map, Compass, User, LogOut, Globe, Search, Network } from "lucide-react";
-import { useSession, signOut } from "next-auth/react";
+import { useAuth } from "@/components/auth-provider";
 import { useApp, View } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ const NAV: { view: View; label: string; icon: any }[] = [
 ];
 
 export function TopNav() {
-  const { status } = useSession();
+  const { status, signOut } = useAuth();
   const view = useApp((s) => s.view);
   const navigate = useApp((s) => s.navigate);
   const openPalette = useApp((s) => s.openPalette);
@@ -88,7 +88,7 @@ export function TopNav() {
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => signOut({ redirect: false })}
+              onClick={() => signOut()}
               className="text-muted-foreground hover:text-foreground"
             >
               <LogOut className="h-4 w-4" strokeWidth={1.6} />

@@ -56,3 +56,7 @@ server.log
 # DreamWeaver local DB (contains user dream data; never commit)
 db/*.db
 db/*.db-journal
+
+# local SQLite databases (never commit demo/QA data)
+db/*.db
+db/*.db-journal

@@ -4,11 +4,18 @@
 // provider, bcrypt-hashed passwords in Prisma. JWT sessions. This is the
 // dev + sandbox QA path — zero cloud credentials needed.
 //
-// PRODUCTION path (`AUTH_BACKEND=firebase`): verify Firebase ID tokens
-// server-side via firebase-admin `auth().verifyIdToken(idToken)`, then
-// issue a NextAuth JWT session keyed on the Firebase uid. The client sends
-// the Firebase ID token; the server verifies it; the app session is
-// established via /api/auth/firebase-login.
+// PRODUCTION path (`AUTH_BACKEND=firebase`): the browser signs in via the
+// Firebase client SDK (firebase/auth), obtains a Firebase ID token, and
+// POSTs it to /api/auth/firebase-login. That route verifies the ID token
+// via `firebase-admin` `auth().verifyIdToken(idToken)`, then issues a
+// signed NextAuth JWT cookie keyed on the verified Firebase uid. The rest
+// of the app (`requireUser()`, ownership-scoped Repository queries) then
+// works unchanged.
+//
+// CRITICAL: in production the Credentials provider is DISABLED entirely —
+// the only way to obtain a session is via /api/auth/firebase-login after a
+// cryptographically verified Firebase ID token. There is no credential-bypass
+// path. One authoritative user identity: the verified Firebase uid.
 //
 //   - The client NEVER sees Firebase service-account keys. The client uses
 //     the Firebase JS SDK with the public `firebaseConfig` (apiKey is public
@@ -39,73 +46,117 @@ function authBackend(): "nextauth" | "firebase" {
   return process.env.AUTH_BACKEND === "firebase" ? "firebase" : "nextauth";
 }
 
-// ---------- NextAuth (local path) ----------
+// ---------- NextAuth options ----------
+//
+// In local-dev mode (AUTH_BACKEND=nextauth) the Credentials provider is
+// enabled and is the source of identity (bcrypt-verified Prisma users).
+//
+// In production (AUTH_BACKEND=firebase) the Credentials provider is
+// DISABLED (the providers array is empty). The only way to get a session
+// is /api/auth/firebase-login, which verifies a Firebase ID token and
+// issues a NextAuth JWT cookie. This means /api/auth/callback/credentials
+// returns an error — there is no credential-bypass path into the app.
+// The NextAuth JWT layer remains as the session cookie mechanism (the
+// /api/auth/firebase-login route uses next-auth/jwt `encode()`), but
+// NextAuth credentials auth is genuinely gone in production.
 
-export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
-  pages: {
-    // We render auth inside the SPA, but keep this for direct hits.
-    signIn: "/",
-  },
-  providers: [
-    Credentials({
-      name: "Credentials",
-      credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" },
-        name: { label: "Name", type: "text" },
-        mode: { label: "Mode", type: "text" },
-      },
-      async authorize(raw) {
-        const parsed = credSchema.safeParse(raw);
-        if (!parsed.success) return null;
-        const { email, password, name, mode } = parsed.data;
-        const emailLc = email.trim().toLowerCase();
+function buildAuthOptions(): NextAuthOptions {
+  const providers: NextAuthOptions["providers"] =
+    authBackend() === "nextauth"
+      ? [
+          Credentials({
+            name: "Credentials",
+            credentials: {
+              email: { label: "Email", type: "email" },
+              password: { label: "Password", type: "password" },
+              name: { label: "Name", type: "text" },
+              mode: { label: "Mode", type: "text" },
+            },
+            async authorize(raw) {
+              const parsed = credSchema.safeParse(raw);
+              if (!parsed.success) return null;
+              const { email, password, name, mode } = parsed.data;
+              const emailLc = email.trim().toLowerCase();
 
-        const repo = await getRepository();
+              const repo = await getRepository();
 
-        if (mode === "signup") {
-          const existing = await repo.user.findUnique({ where: { email: emailLc } });
-          if (existing) return null; // already exists
-          const hash = await bcrypt.hash(password, 12);
-          const user = await repo.user.create({
-            data: { email: emailLc, name: name?.trim() || null, password: hash },
-          });
-          return { id: user.id, email: user.email, name: user.name } as any;
+              if (mode === "signup") {
+                const existing = await repo.user.findUnique({ where: { email: emailLc } });
+                if (existing) return null; // already exists
+                const hash = await bcrypt.hash(password, 12);
+                const user = await repo.user.create({
+                  data: { email: emailLc, name: name?.trim() || null, password: hash },
+                });
+                return { id: user.id, email: user.email, name: user.name } as any;
+              }
+
+              // signin
+              const user = await repo.user.findUnique({ where: { email: emailLc } });
+              if (!user) return null;
+              const ok = await bcrypt.compare(password, user.password);
+              if (!ok) return null;
+              return { id: user.id, email: user.email, name: user.name } as any;
+            },
+          }),
+        ]
+      : // PRODUCTION: no credentials provider. Only /api/auth/firebase-login
+        // can mint a session, and only after a verified Firebase ID token.
+        [];
+
+  return {
+    session: { strategy: "jwt" },
+    pages: {
+      // We render auth inside the SPA, but keep this for direct hits.
+      signIn: "/",
+    },
+    providers,
+    callbacks: {
+      async jwt({ token, user }) {
+        if (user) {
+          token.uid = (user as any).id;
+          token.email = (user as any).email;
         }
-
-        // signin
-        const user = await repo.user.findUnique({ where: { email: emailLc } });
-        if (!user) return null;
-        const ok = await bcrypt.compare(password, user.password);
-        if (!ok) return null;
-        return { id: user.id, email: user.email, name: user.name } as any;
+        return token;
       },
-    }),
-  ],
-  callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
-        token.uid = (user as any).id;
-        token.email = (user as any).email;
-      }
-      return token;
+      async session({ session, token }) {
+        if (session.user) {
+          (session.user as any).id = token.uid as string;
+        }
+        return session;
+      },
     },
-    async session({ session, token }) {
-      if (session.user) {
-        (session.user as any).id = token.uid as string;
+    // SECRET: NO insecure production fallback. In production
+    // (AUTH_BACKEND=firebase) NEXTAUTH_SECRET MUST be set (via Secret
+    // Manager) — if it is missing the server refuses to sign sessions
+    // rather than silently using a known dev string. In local dev the
+    // fallback is tolerated so `bun run dev` works out of the box
+    // (the .env.example tells the developer to change it).
+    secret: (() => {
+      const s = process.env.NEXTAUTH_SECRET;
+      if (s && s.length > 0) return s;
+      if (authBackend() === "firebase") {
+        // PRODUCTION: refuse to use a fallback. Every session cookie will
+        // fail to verify (the encode/decode calls will throw) — better than
+        // silently authenticating against a public string.
+        console.error(
+          "[auth] FATAL: NEXTAUTH_SECRET is not set in production (AUTH_BACKEND=firebase). Refusing to use a fallback secret."
+        );
+        return undefined;
       }
-      return session;
-    },
-  },
-  secret: process.env.NEXTAUTH_SECRET || "dreamweaver-dev-secret-change-me",
-};
+      // Local-dev fallback (clearly marked as insecure; .env.example
+      // instructs the developer to override it).
+      return "dreamweaver-dev-secret-change-me";
+    })(),
+  };
+}
+
+export const authOptions: NextAuthOptions = buildAuthOptions();
 
 import { getServerSession } from "next-auth";
 
 export async function getAuthSession() {
-  // Both paths use the NextAuth session as the app session — the Firebase
-  // path issues a NextAuth JWT after verifying the ID token in
+  // Both paths use the NextAuth session cookie as the app session — the
+  // Firebase path issues a NextAuth JWT after verifying the ID token in
   // /api/auth/firebase-login (see that route). So this is the single
   // session resolver for both paths.
   return getServerSession(authOptions);

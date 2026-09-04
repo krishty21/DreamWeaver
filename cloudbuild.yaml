@@ -16,8 +16,18 @@
 #   _NEXTAUTH_SECRET_SM   secret name in Secret Manager (e.g. "NEXTAUTH_SECRET")
 #   _GEMINI_API_KEY_SM    secret name in Secret Manager (e.g. "GEMINI_API_KEY")
 #
-# This file is intentionally a real, deployable spec; it was NOT executed
-# in the sandbox (no Google Cloud credentials available).
+# PUBLIC-ACCESS POLICY:
+#   The Cloud Run service is PUBLICLY REACHABLE (--allow-unauthenticated) so
+#   the browser can load the Next.js app and the client-side Firebase SDK can
+#   perform end-user authentication. Authentication is enforced at the
+#   APPLICATION layer (Firebase ID token verification on every API request),
+#   NOT at the Cloud Run ingress layer. The public ingress only serves the
+#   static HTML/JS shell; every /api/* route calls requireUser() which
+#   verifies the signed session cookie (minted only after a verified Firebase
+#   ID token) and rejects unauthenticated requests with 401.
+#
+# This file is a real, deployable spec; it was NOT executed in the sandbox
+# (no Google Cloud credentials available).
 
 substitutions:
   _REGION: us-central1
@@ -25,6 +35,9 @@ substitutions:
   _AR_REPO: dreamweaver
   _RUNNER_SA: dreamweaver-runner@YOUR_PROJECT.iam.gserviceaccount.com
   _FIREBASE_PROJECT_ID: YOUR_FIREBASE_PROJECT_ID
+  _FIREBASE_WEB_API_KEY: YOUR_FIREBASE_WEB_API_KEY
+  _FIREBASE_WEB_APP_ID: YOUR_FIREBASE_WEB_APP_ID
+  _FIREBASE_MESSAGING_SENDER_ID: YOUR_FIREBASE_MESSAGING_SENDER_ID
   _NEXTAUTH_SECRET_SM: NEXTAUTH_SECRET
   _GEMINI_API_KEY_SM: GEMINI_API_KEY
 
@@ -33,9 +46,18 @@ options:
 
 steps:
   # 1. Build the Docker image and push to Artifact Registry.
+  #    NEXT_PUBLIC_FIREBASE_* are passed as BUILD ARGS because Next.js
+  #    inlines NEXT_PUBLIC_* values into the client bundle at build time.
+  #    In production the deployer substitutes the real Firebase web config.
   - name: gcr.io/cloud-builders/docker
     args:
       - build
+      - --build-arg=NEXT_PUBLIC_AUTH_BACKEND=firebase
+      - --build-arg=NEXT_PUBLIC_FIREBASE_API_KEY=${_FIREBASE_WEB_API_KEY}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=${_FIREBASE_PROJECT_ID}.firebaseapp.com
+      - --build-arg=NEXT_PUBLIC_FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_APP_ID=${_FIREBASE_WEB_APP_ID}
+      - --build-arg=NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=${_FIREBASE_MESSAGING_SENDER_ID}
       - -t
       - ${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}:${SHORT_SHA}
       - -t
@@ -47,6 +69,9 @@ steps:
       - ${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}
 
   # 2. Deploy to Cloud Run with the production environment.
+  #    --allow-unauthenticated makes the service publicly reachable so the
+  #    browser can load the app. Auth is enforced at the application layer
+  #    (Firebase ID token verification), not at Cloud Run ingress.
   - name: gcr.io/cloud-builders/gcloud
     args:
       - run
@@ -63,12 +88,20 @@ steps:
       - --memory=1Gi
       - --timeout=300
       - --ingress=all
-      - --no-allow-unauthenticated=false
-      - --set-env-vars=DATA_BACKEND=firestore,AI_BACKEND=gemini,AUTH_BACKEND=firebase,SECRETS_BACKEND=gsm,NEXTAUTH_URL=https://${_SERVICE_NAME}.${_REGION}.run.app,FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID},GCLOUD_PROJECT=${_FIREBASE_PROJECT_ID}
+      - --allow-unauthenticated
+      - --set-env-vars=DATA_BACKEND=firestore,AI_BACKEND=gemini,AUTH_BACKEND=firebase,SECRETS_BACKEND=gsm,NEXT_PUBLIC_AUTH_BACKEND=firebase,NEXTAUTH_URL=https://${_SERVICE_NAME}.${_REGION}.run.app,FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID},GCLOUD_PROJECT=${_FIREBASE_PROJECT_ID}
       # Mount secrets from Secret Manager as env vars (the SA must have
       # roles/secretmanager.secretAccessor).
       - --set-secrets=NEXTAUTH_SECRET=${_NEXTAUTH_SECRET_SM}:latest,GEMINI_API_KEY=${_GEMINI_API_KEY_SM}:latest
+      # NOTE: NEXT_PUBLIC_FIREBASE_* vars are inlined at BUILD time (not
+      # runtime), so they must be passed to the Docker build as build args
+      # OR baked into next.config. The deploy/cloud-run.yaml manifest
+      # documents these as runtime env for completeness, but the values
+      # that actually reach the browser bundle are the ones present at
+      # `next build` time. Configure them in the Dockerfile build stage
+      # or via a build-args override in the `docker build` step above.
 
 images:
   - ${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}:${SHORT_SHA}
   - ${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}:latest
+

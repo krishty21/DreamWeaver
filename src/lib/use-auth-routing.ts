@@ -1,15 +1,18 @@
 "use client";
 
-import { useSession } from "next-auth/react";
 import { useEffect } from "react";
+import { useAuth } from "@/components/auth-provider";
 import { useApp } from "@/lib/store";
 
 // Hook that maps the current auth status onto the active view.
 // - When unauthenticated, force view to "landing", "auth", or "shared"
 //   (the shared reflection is a public read-only view).
 // - When authenticated, redirect away from "landing"/"auth" to "dashboard".
+//
+// This is backend-agnostic: `useAuth()` resolves to Firebase client auth
+// (production) or NextAuth's useSession (local dev) behind the same contract.
 export function useAuthRouting() {
-  const { status } = useSession();
+  const { status } = useAuth();
   const view = useApp((s) => s.view);
   const navigate = useApp((s) => s.navigate);
 
@@ -27,5 +30,5 @@ export function useAuthRouting() {
         navigate("dashboard");
       }
     }
-  }, [status]);
+  }, [status, view, navigate]);
 }

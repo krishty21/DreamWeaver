@@ -4,7 +4,8 @@ import { getRepository } from "@/lib/data/repository";
 import { generateArcadeTurn } from "@/lib/ai";
 import { applyDelta, endingText } from "@/lib/simulation";
 import { computeMemoryEcho } from "@/lib/memory-graph";
-import { acquireLock, lockKey, rateLimit, rateKey } from "@/lib/rate-limit";
+import { acquireArcadeLock } from "@/lib/distributed-lock";
+import { rateLimit, rateKey } from "@/lib/rate-limit";
 import type { SimulationState, DreamLaw } from "@/lib/types";
 import { z } from "zod";
 
@@ -78,10 +79,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // (a) Per-session single-flight lock: a double-submit / refresh / parallel
   //     request for the SAME session would otherwise create two turns and
   //     corrupt authoritative state. The lock auto-expires after 90s (the
-  //     model rarely exceeds this; the lock is a safety net).
+  //     model rarely exceeds this; the lock is a safety net). On the
+  //     Firestore backend this is a DISTRIBUTED lock (Firestore document +
+  //     transaction) so it holds across Cloud Run instances; on the local
+  //     SQLite backend it's the in-memory lock (single-process dev).
   // (b) Per-user rate limit: cap turn generation to 30/min so a malicious
   //     client cannot burn Gemini quota.
-  const lock = acquireLock(lockKey("arcade-turn", session.id), { ttlMs: 90_000 });
+  const lock = await acquireArcadeLock(session.id, { ttlMs: 90_000 });
   if (!lock.acquired) {
     return NextResponse.json(
       { error: "A turn for this dream is already forming. Let it settle before acting again." },
@@ -90,7 +94,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const rl = rateLimit(rateKey("arcade-turn", userId), { max: 30, windowMs: 60_000 });
   if (!rl.ok) {
-    lock.release();
+    await lock.release();
     return NextResponse.json(
       { error: "You're moving through the dream a little too fast. Pause for a moment." },
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
@@ -259,6 +263,6 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // r12 — always release the per-session single-flight lock so the next
     // turn can proceed (even if persistence threw; the lock would otherwise
     // wait for its TTL).
-    lock.release();
+    await lock.release();
   }
 }

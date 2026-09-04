@@ -1,0 +1,1042 @@
+     1→// DreamWeaver — Firestore adapter (PRODUCTION path).
+     2→//
+     3→// Implements the SAME Repository contract as the Prisma adapter using
+     4→// `firebase-admin` Firestore. Loaded ONLY when `process.env.DATA_BACKEND ===
+     5→// 'firestore'`; otherwise never imported (no firebase-admin in local mode).
+     6→//
+     7→// COLLECTION LAYOUT (top-level, per-entity):
+     8→//   users/{uid}                                  User
+     9→//   dreams/{dreamId}                             Dream
+    10→//   dreams/{dreamId}/analysis/current            DreamAnalysis (single child)
+    11→//   motifs/{motifId}                             Motif
+    12→//   entities/{entityId}                          Entity (canonical)
+    13→//   entityMentions/{mentionId}                   EntityMention
+    14→//   arcadeSessions/{sessionId}                   ArcadeSession
+    15→//   arcadeSessions/{sessionId}/turns/{turnId}    SessionTurn
+    16→//   lexiconIgnores/{id}                          LexiconIgnore
+    17→//
+    18→// SECURITY — per-user isolation enforced in EVERY query:
+    19→// Every user-scoped method reads `where.userId` (or `data.userId` on create)
+    20→// from the args and applies it as a composite filter. A user can NEVER
+    21→// retrieve or modify another user's records by any input — even if a client
+    22→// supplied a foreign id, the composite filter excludes the row. If `userId`
+    23→// is missing on a user-scoped operation, the adapter throws (the only safe
+    24→// assumption is "the route forgot to scope it").
+    25→//
+    26→// PUBLIC-BY-TOKEN READS (shared dream + session story):
+    27→// The public share routes call `dream.findFirst({ where: { shareToken } })`
+    28→// and `arcadeSession.findFirst({ where: { shareToken } })` WITHOUT a userId.
+    29→// These are the only user-scoped methods allowed to omit userId (the
+    30→// shareToken itself is the secret; possession grants read). The returned
+    31→// payload is sanitised by the route (never raw model output).
+    32→//
+    33→// JSON-STRING FIELDS: the Prisma schema stores emotionsJson, symbolsJson,
+    34→// etc. as JSON strings (SQLite has no native list/scalar-json). The routes
+    35→// pass these as already-JSON-stringified strings. In Firestore we store
+    36→// them as NATIVE maps/arrays (no need to JSON-stringify). The adapter
+    37→// handles the encode/decode so the Repository contract still returns the
+    38→// same `*Json: string` shape the routes expect.
+    39→//
+    40→// INITIALIZATION: lazy via firebase-admin applicationDefault() — uses the
+    41→// Cloud Run runtime service account (ADC), NOT hardcoded keys. The public
+    42→// Firebase client config (apiKey) is browser-safe; service-account
+    43→// credentials are server-only.
+    44→//
+    45→// CRITICAL PRINCIPLE: this adapter is a pure data-access delegate. The
+    46→// "MODEL OUTPUT IS NEVER TRUSTED AS APPLICATION STATE" rule is enforced
+    47→// by the routes + simulation.ts. The adapter does not interpret model
+    48→// output — it stores what the route hands it, after the route has already
+    49→// validated/clamped.
+    50→
+    51→import type { Repository } from "./repository";
+    52→import admin from "firebase-admin";
+    53→
+    54→// ---------- SDK singletons ----------
+    55→
+    56→let _dbstore: any = null;
+    57→function firestore(): any {
+    58→  if (_dbstore) return _dbstore;
+    59→  if (!admin.apps.length) {
+    60→    admin.initializeApp({
+    61→      credential: admin.credential.applicationDefault(),
+    62→      projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT,
+    63→      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined,
+    64→    });
+    65→  }
+    66→  _dbstore = admin.app().firestore();
+    67→  return _dbstore;
+    68→}
+    69→
+    70→// ---------- Helpers ----------
+    71→
+    72→function now(): Date {
+    73→  return new Date();
+    74→}
+    75→
+    76→function requireUserId(where: any, method: string): string {
+    77→  const uid = where?.userId;
+    78→  if (typeof uid !== "string" || !uid.length) {
+    79→    throw new Error(
+    80→      `[firestore-adapter] ${method} requires where.userId — refusing unscoped user operation`
+    81→    );
+    82→  }
+    83→  return uid;
+    84→}
+    85→
+    86→function jstr(v: any): string {
+    87→  try {
+    88→    return JSON.stringify(v ?? []);
+    89→  } catch {
+    90→    return "[]";
+    91→  }
+    92→}
+    93→
+    94→function jparse(s: any, fallback: any = []) {
+    95→  if (s == null) return fallback;
+    96→  if (typeof s === "string") {
+    97→    try {
+    98→      return JSON.parse(s);
+    99→    } catch {
+   100→      return fallback;
+   101→    }
+   102→  }
+   103→  return s;
+   104→}
+   105→
+   106→function toDate(v: any): Date | null {
+   107→  if (!v) return null;
+   108→  if (v instanceof Date) return v;
+   109→  if (typeof v?.toDate === "function") return v.toDate();
+   110→  if (typeof v === "string") return new Date(v);
+   111→  if (typeof v === "number") return new Date(v);
+   112→  return null;
+   113→}
+   114→
+   115→// Map of DreamAnalysis JSON-string fields.
+   116→const ANALYSIS_JSON_FIELDS = [
+   117→  "emotionsJson",
+   118→  "symbolsJson",
+   119→  "motifsJson",
+   120→  "peopleJson",
+   121→  "locationsJson",
+   122→  "actionsJson",
+   123→  "interpretationsJson",
+   124→  "relationshipsJson",
+   125→  "historicalConnectionsJson",
+   126→  "dreamLawsJson",
+   127→  "evidenceJson",
+   128→  "modelRawJson",
+   129→] as const;
+   130→const NATIVE_KEY = (k: string) => k.replace(/Json$/, "");
+   131→
+   132→// ---------- Shapers (route-expected payload shapes) ----------
+   133→
+   134→function shapeUser(id: string, d: any, select?: Record<string, boolean>): any {
+   135→  const full = {
+   136→    id,
+   137→    email: d?.email,
+   138→    name: d?.name ?? null,
+   139→    password: d?.password,
+   140→    createdAt: toDate(d?.createdAt) ?? now(),
+   141→    updatedAt: toDate(d?.updatedAt) ?? now(),
+   142→  };
+   143→  if (!select) return full;
+   144→  const out: any = { id };
+   145→  for (const k of Object.keys(select)) if (select[k]) out[k] = (full as any)[k];
+   146→  return out;
+   147→}
+   148→
+   149→function shapeDream(id: string, d: any): any {
+   150→  return {
+   151→    id,
+   152→    userId: d?.userId,
+   153→    rawText: d?.rawText,
+   154→    title: d?.title ?? null,
+   155→    mood: d?.mood ?? "neutral",
+   156→    shareToken: d?.shareToken ?? null,
+   157→    shareIncludeRaw: d?.shareIncludeRaw ?? false,
+   158→    sharedAt: toDate(d?.sharedAt),
+   159→    shareExpiresAt: toDate(d?.shareExpiresAt),
+   160→    createdAt: toDate(d?.createdAt) ?? now(),
+   161→    updatedAt: toDate(d?.updatedAt) ?? now(),
+   162→    analysis: undefined,
+   163→    motifs: undefined,
+   164→    sessions: undefined,
+   165→    user: undefined,
+   166→  };
+   167→}
+   168→
+   169→function shapeAnalysis(d: any): any {
+   170→  if (!d) return null;
+   171→  const out: any = {
+   172→    id: "current",
+   173→    dreamId: d.dreamId,
+   174→    summary: d.summary ?? "",
+   175→    lucidity: d.lucidity ?? 0.3,
+   176→    lucidityNote: d.lucidityNote ?? null,
+   177→    fear: d.fear ?? 0.2,
+   178→    uncertainty: d.uncertainty ?? 0.3,
+   179→    createdAt: toDate(d.createdAt) ?? now(),
+   180→  };
+   181→  for (const k of ANALYSIS_JSON_FIELDS) {
+   182→    out[k] = jstr(d[NATIVE_KEY(k)] ?? d[k]);
+   183→  }
+   184→  return out;
+   185→}
+   186→
+   187→function shapeMotif(id: string, d: any, select?: Record<string, boolean>): any {
+   188→  const full = {
+   189→    id,
+   190→    dreamId: d?.dreamId,
+   191→    userId: d?.userId,
+   192→    label: d?.label,
+   193→    type: d?.type ?? "symbol",
+   194→    note: d?.note ?? null,
+   195→    confidence: d?.confidence ?? 0.5,
+   196→    entityId: d?.entityId ?? null,
+   197→    createdAt: toDate(d?.createdAt) ?? now(),
+   198→  };
+   199→  if (!select) return full;
+   200→  const out: any = { id };
+   201→  for (const k of Object.keys(select)) if (select[k]) out[k] = (full as any)[k];
+   202→  return out;
+   203→}
+   204→
+   205→function shapeEntity(id: string, d: any, mentions?: any): any {
+   206→  const out: any = {
+   207→    id,
+   208→    userId: d?.userId,
+   209→    label: d?.label,
+   210→    type: d?.type ?? "symbol",
+   211→    aliasesJson: jstr(d?.aliases ?? []),
+   212→    note: d?.note ?? null,
+   213→    mentionCount: d?.mentionCount ?? 0,
+   214→    firstSeen: toDate(d?.firstSeen),
+   215→    lastSeen: toDate(d?.lastSeen),
+   216→    createdAt: toDate(d?.createdAt) ?? now(),
+   217→    updatedAt: toDate(d?.updatedAt) ?? now(),
+   218→  };
+   219→  if (mentions) out.mentions = mentions;
+   220→  return out;
+   221→}
+   222→
+   223→function shapeEntityMention(id: string, d: any, select?: Record<string, boolean>): any {
+   224→  const full = {
+   225→    id,
+   226→    entityId: d?.entityId,
+   227→    dreamId: d?.dreamId,
+   228→    userId: d?.userId,
+   229→    motifId: d?.motifId ?? null,
+   230→    surfaceLabel: d?.surfaceLabel,
+   231→    note: d?.note ?? null,
+   232→    fear: d?.fear ?? 0,
+   233→    lucidity: d?.lucidity ?? 0,
+   234→    mood: d?.mood ?? "neutral",
+   235→    role: d?.role ?? "appears",
+   236→    createdAt: toDate(d?.createdAt) ?? now(),
+   237→  };
+   238→  if (!select) return full;
+   239→  const out: any = { id };
+   240→  for (const k of Object.keys(select)) if (select[k]) out[k] = (full as any)[k];
+   241→  return out;
+   242→}
+   243→
+   244→function shapeArcadeSession(id: string, d: any): any {
+   245→  return {
+   246→    id,
+   247→    userId: d?.userId,
+   248→    dreamId: d?.dreamId,
+   249→    mode: d?.mode ?? "replay",
+   250→    status: d?.status ?? "active",
+   251→    ending: d?.ending ?? null,
+   252→    stateJson: jstr(d?.state ?? {}),
+   253→    shareToken: d?.shareToken ?? null,
+   254→    sharedAt: toDate(d?.sharedAt),
+   255→    shareExpiresAt: toDate(d?.shareExpiresAt),
+   256→    createdAt: toDate(d?.createdAt) ?? now(),
+   257→    updatedAt: toDate(d?.updatedAt) ?? now(),
+   258→  };
+   259→}
+   260→
+   261→function shapeTurn(id: string, d: any, select?: Record<string, boolean>): any {
+   262→  const full: any = {
+   263→    id,
+   264→    sessionId: d?.sessionId,
+   265→    turnNumber: d?.turnNumber,
+   266→    userAction: d?.userAction,
+   267→    sceneText: d?.sceneText,
+   268→    choicesJson: jstr(d?.choices ?? []),
+   269→    proposedStateDeltaJson: jstr(d?.proposedStateDelta ?? {}),
+   270→    discoveredMotifsJson: jstr(d?.discoveredMotifs ?? []),
+   271→    appliedDeltaJson: jstr(d?.appliedDelta ?? {}),
+   272→    isEnding: !!d?.isEnding,
+   273→    endingType: d?.endingType ?? null,
+   274→    createdAt: toDate(d?.createdAt) ?? now(),
+   275→  };
+   276→  if (!select) return full;
+   277→  const out: any = { id };
+   278→  for (const k of Object.keys(select)) if (select[k]) out[k] = (full as any)[k];
+   279→  return out;
+   280→}
+   281→
+   282→// ---------- Adapter ----------
+   283→
+   284→class FirestoreRepository implements Repository {
+   285→  readonly backend = "firestore" as const;
+   286→
+   287→  user = {
+   288→    async findUnique(args: any): Promise<any> {
+   289→      const w = args.where ?? {};
+   290→      let snap: any;
+   291→      if (w.id) {
+   292→        snap = await firestore().doc(`users/${w.id}`).get();
+   293→      } else if (w.email) {
+   294→        snap = await firestore()
+   295→          .collection("users")
+   296→          .where("email", "==", w.email)
+   297→          .limit(1)
+   298→          .get();
+   299→      } else {
+   300→        return null;
+   301→      }
+   302→      if (!snap.exists) return null;
+   303→      return shapeUser(snap.id, snap.data(), args.select);
+   304→    },
+   305→    async findFirst(args: any): Promise<any> {
+   306→      return this.user.findUnique(args);
+   307→    },
+   308→    async create(args: any): Promise<any> {
+   309→      const ref = firestore().collection("users").doc();
+   310→      await ref.set({
+   311→        email: args.data.email,
+   312→        name: args.data.name ?? null,
+   313→        password: args.data.password,
+   314→        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+   315→        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+   316→      });
+   317→      const snap = await ref.get();
+   318→      return shapeUser(ref.id, snap.data(), args.select);
+   319→    },
+   320→  };
+   321→
+   322→  dream = {
+   323→    async findMany(args: any): Promise<any[]> {
+   324→      const uid = requireUserId(args.where, "dream.findMany");
+   325→      let q: any = firestore().collection("dreams").where("userId", "==", uid);
+   326→      if (args.where?.id?.not) q = q.where("id", "!=", args.where.id.not);
+   327→      if (args.where?.shareToken) q = q.where("shareToken", "==", args.where.shareToken);
+   328→      if (args.orderBy?.createdAt) q = q.orderBy("createdAt", args.orderBy.createdAt);
+   329→      if (args.take) q = q.limit(args.take);
+   330→      const snap = await q.get();
+   331→      const docs = snap.docs.map((d: any) => shapeDream(d.id, d.data()));
+   332→      return resolveDreamIncludes(docs, args.include);
+   333→    },
+   334→    async findFirst(args: any): Promise<any> {
+   335→      const w = args.where ?? {};
+   336→      let snap: any;
+   337→      if (w.id && w.userId) {
+   338→        snap = await firestore()
+   339→          .collection("dreams")
+   340→          .where("id", "==", w.id)
+   341→          .where("userId", "==", w.userId)
+   342→          .limit(1)
+   343→          .get();
+   344→      } else if (w.shareToken) {
+   345→        // PUBLIC-BY-TOKEN read — no userId (the route sanitises the payload).
+   346→        snap = await firestore()
+   347→          .collection("dreams")
+   348→          .where("shareToken", "==", w.shareToken)
+   349→          .limit(1)
+   350→          .get();
+   351→      } else if (w.id) {
+   352→        snap = await firestore()
+   353→          .collection("dreams")
+   354→          .where("id", "==", w.id)
+   355→          .limit(1)
+   356→          .get();
+   357→      } else {
+   358→        return null;
+   359→      }
+   360→      if (snap.empty) return null;
+   361→      const d = snap.docs[0];
+   362→      const doc = shapeDream(d.id, d.data());
+   363→      return (await resolveDreamIncludes([doc], args.include))[0];
+   364→    },
+   365→    async findUnique(args: any): Promise<any> {
+   366→      const snap = await firestore().doc(`dreams/${args.where.id}`).get();
+   367→      if (!snap.exists) return null;
+   368→      const doc = shapeDream(snap.id, snap.data());
+   369→      return (await resolveDreamIncludes([doc], args.include))[0];
+   370→    },
+   371→    async create(args: any): Promise<any> {
+   372→      const uid = requireUserId(args.data, "dream.create");
+   373→      const ref = firestore().collection("dreams").doc();
+   374→      await ref.set({
+   375→        id: ref.id,
+   376→        userId: uid,
+   377→        rawText: args.data.rawText,
+   378→        title: args.data.title ?? "Untitled dream",
+   379→        mood: args.data.mood ?? "neutral",
+   380→        shareToken: null,
+   381→        shareIncludeRaw: false,
+   382→        sharedAt: null,
+   383→        shareExpiresAt: null,
+   384→        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+   385→        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+   386→      });
+   387→      const snap = await ref.get();
+   388→      const doc = shapeDream(ref.id, snap.data());
+   389→      return (await resolveDreamIncludes([doc], args.include))[0];
+   390→    },
+   391→    async update(args: any): Promise<any> {
+   392→      const ref = firestore().doc(`dreams/${args.where.id}`);
+   393→      const existing = await ref.get();
+   394→      if (!existing.exists) throw new Error("dream not found");
+   395→      const data: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+   396→      for (const k of [
+   397→        "title",
+   398→        "mood",
+   399→        "shareToken",
+   400→        "shareIncludeRaw",
+   401→        "sharedAt",
+   402→        "shareExpiresAt",
+   403→      ]) {
+   404→        if (k in args.data) data[k] = args.data[k];
+   405→      }
+   406→      await ref.update(data);
+   407→      const snap = await ref.get();
+   408→      const doc = shapeDream(ref.id, snap.data());
+   409→      return (await resolveDreamIncludes([doc], args.include))[0];
+   410→    },
+   411→    async delete(args: any): Promise<any> {
+   412→      const ref = firestore().doc(`dreams/${args.where.id}`);
+   413→      const dreamId = args.where.id;
+   414→      const analysisSnap = await ref.collection("analysis").get();
+   415→      const motifSnap = await firestore()
+   416→        .collection("motifs")
+   417→        .where("dreamId", "==", dreamId)
+   418→        .get();
+   419→      const sessionSnap = await firestore()
+   420→        .collection("arcadeSessions")
+   421→        .where("dreamId", "==", dreamId)
+   422→        .get();
+   423→      const mentionSnap = await firestore()
+   424→        .collection("entityMentions")
+   425→        .where("dreamId", "==", dreamId)
+   426→        .get();
+   427→      const batch = firestore().batch();
+   428→      for (const d of analysisSnap.docs) batch.delete(d.ref);
+   429→      for (const d of motifSnap.docs) batch.delete(d.ref);
+   430→      for (const d of sessionSnap.docs) {
+   431→        const turnsSnap = await d.ref.collection("turns").get();
+   432→        for (const t of turnsSnap.docs) batch.delete(t.ref);
+   433→        batch.delete(d.ref);
+   434→      }
+   435→      for (const d of mentionSnap.docs) batch.delete(d.ref);
+   436→      batch.delete(ref);
+   437→      await batch.commit();
+   438→      return { ok: true };
+   439→    },
+   440→    async count(args: any): Promise<number> {
+   441→      const uid = requireUserId(args.where, "dream.count");
+   442→      const snap = await firestore()
+   443→        .collection("dreams")
+   444→        .where("userId", "==", uid)
+   445→        .get();
+   446→      return snap.size;
+   447→    },
+   448→  };
+   449→
+   450→  dreamAnalysis = {
+   451→    async create(args: any): Promise<any> {
+   452→      const dreamId = args.data.dreamId;
+   453→      if (!dreamId) throw new Error("dreamAnalysis.create requires data.dreamId");
+   454→      const ref = firestore().doc(`dreams/${dreamId}/analysis/current`);
+   455→      const payload: any = { dreamId };
+   456→      for (const k of ["summary", "lucidity", "lucidityNote", "fear", "uncertainty"]) {
+   457→        if (k in args.data) payload[k] = args.data[k];
+   458→      }
+   459→      for (const k of ANALYSIS_JSON_FIELDS) {
+   460→        if (k in args.data) payload[NATIVE_KEY(k)] = jparse(args.data[k], []);
+   461→      }
+   462→      payload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+   463→      await ref.set(payload);
+   464→      const snap = await ref.get();
+   465→      return shapeAnalysis(snap.data());
+   466→    },
+   467→    async delete(args: any): Promise<any> {
+   468→      const dreamId = args.where.dreamId;
+   469→      if (!dreamId) throw new Error("dreamAnalysis.delete requires where.dreamId");
+   470→      await firestore().doc(`dreams/${dreamId}/analysis/current`).delete();
+   471→      return { ok: true };
+   472→    },
+   473→  };
+   474→
+   475→  motif = {
+   476→    async createMany(args: any): Promise<{ count: number }> {
+   477→      const rows = args.data ?? [];
+   478→      if (!rows.length) return { count: 0 };
+   479→      const batch = firestore().batch();
+   480→      for (const r of rows) {
+   481→        if (!r.userId) throw new Error("motif.createMany: each row needs userId");
+   482→        const ref = firestore().collection("motifs").doc();
+   483→        batch.set(ref, {
+   484→          id: ref.id,
+   485→          dreamId: r.dreamId,
+   486→          userId: r.userId,
+   487→          label: r.label,
+   488→          type: r.type ?? "symbol",
+   489→          note: r.note ?? null,
+   490→          confidence: r.confidence ?? 0.5,
+   491→          entityId: r.entityId ?? null,
+   492→          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+   493→        });
+   494→      }
+   495→      await batch.commit();
+   496→      return { count: rows.length };
+   497→    },
+   498→    async deleteMany(args: any): Promise<{ count: number }> {
+   499→      const dreamId = args.where?.dreamId;
+   500→      if (!dreamId) throw new Error("motif.deleteMany requires where.dreamId");
+   501→      const snap = await firestore()
+   502→        .collection("motifs")
+   503→        .where("dreamId", "==", dreamId)
+   504→        .get();
+   505→      const batch = firestore().batch();
+   506→      for (const d of snap.docs) batch.delete(d.ref);
+   507→      await batch.commit();
+   508→      return { count: snap.size };
+   509→    },
+   510→    async update(args: any): Promise<any> {
+   511→      const ref = firestore().doc(`motifs/${args.where.id}`);
+   512→      await ref.update(args.data);
+   513→      const snap = await ref.get();
+   514→      return shapeMotif(snap.id, snap.data());
+   515→    },
+   516→    async findMany(args: any): Promise<any[]> {
+   517→      const uid = requireUserId(args.where, "motif.findMany");
+   518→      const snap = await firestore()
+   519→        .collection("motifs")
+   520→        .where("userId", "==", uid)
+   521→        .get();
+   522→      const docs = snap.docs.map((d: any) => shapeMotif(d.id, d.data()));
+   523→      if (args.include?.dream) {
+   524→        for (const doc of docs) {
+   525→          const dSnap = await firestore().doc(`dreams/${doc.dreamId}`).get();
+   526→          const dd = dSnap.data();
+   527→          if (args.include.dream?.include?.analysis) {
+   528→            const aSnap = await firestore()
+   529→              .doc(`dreams/${doc.dreamId}/analysis/current`)
+   530→              .get();
+   531→            dd.analysis = aSnap.exists ? shapeAnalysis(aSnap.data()) : null;
+   532→          }
+   533→          doc.dream = shapeDream(doc.dreamId, dd);
+   534→        }
+   535→      }
+   536→      return docs;
+   537→    },
+   538→    async count(args: any): Promise<number> {
+   539→      const uid = requireUserId(args.where, "motif.count");
+   540→      const snap = await firestore()
+   541→        .collection("motifs")
+   542→        .where("userId", "==", uid)
+   543→        .get();
+   544→      return snap.size;
+   545→    },
+   546→  };
+   547→
+   548→  entity = {
+   549→    async create(args: any): Promise<any> {
+   550→      const uid = requireUserId(args.data, "entity.create");
+   551→      const ref = firestore().collection("entities").doc();
+   552→      await ref.set({
+   553→        id: ref.id,
+   554→        userId: uid,
+   555→        label: args.data.label,
+   556→        type: args.data.type ?? "symbol",
+   557→        aliases: jparse(args.data.aliasesJson ?? "[]", []),
+   558→        note: args.data.note ?? null,
+   559→        mentionCount: args.data.mentionCount ?? 0,
+   560→        firstSeen: args.data.firstSeen ?? null,
+   561→        lastSeen: args.data.lastSeen ?? null,
+   562→        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+   563→        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+   564→      });
+   565→      if (args.include?.mentions) {
+   566→        return shapeEntity(ref.id, (await ref.get()).data(), []);
+   567→      }
+   568→      return shapeEntity(ref.id, (await ref.get()).data());
+   569→    },
+   570→    async update(args: any): Promise<any> {
+   571→      const ref = firestore().doc(`entities/${args.where.id}`);
+   572→      const data: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+   573→      for (const k of ["label", "type", "note", "mentionCount", "firstSeen", "lastSeen"]) {
+   574→        if (k in args.data) data[k] = args.data[k];
+   575→      }
+   576→      if ("aliasesJson" in args.data) data.aliases = jparse(args.data.aliasesJson, []);
+   577→      await ref.update(data);
+   578→      let mentions: any[] | null = null;
+   579→      if (args.include?.mentions) {
+   580→        const mSnap = await firestore()
+   581→          .collection("entityMentions")
+   582→          .where("entityId", "==", args.where.id)
+   583→          .orderBy("createdAt", "asc")
+   584→          .get();
+   585→        mentions = mSnap.docs.map((d: any) => shapeEntityMention(d.id, d.data()));
+   586→      }
+   587→      return shapeEntity(ref.id, (await ref.get()).data(), mentions ?? undefined);
+   588→    },
+   589→    async delete(args: any): Promise<any> {
+   590→      await firestore().doc(`entities/${args.where.id}`).delete();
+   591→      return { ok: true };
+   592→    },
+   593→    async findMany(args: any): Promise<any[]> {
+   594→      const uid = requireUserId(args.where, "entity.findMany");
+   595→      let q: any = firestore().collection("entities").where("userId", "==", uid);
+   596→      if (args.where?.label?.in) q = q.where("label", "in", args.where.label.in);
+   597→      if (args.orderBy) {
+   598→        for (const [k, v] of Object.entries(args.orderBy)) {
+   599→          q = q.orderBy(k, v as any);
+   600→        }
+   601→      }
+   602→      const snap = await q.get();
+   603→      const docs = snap.docs.map((d: any) => shapeEntity(d.id, d.data()));
+   604→      if (args.include?.mentions) {
+   605→        const includeDream = !!args.include.mentions.include?.dream;
+   606→        const dreamSelect = args.include.mentions.include?.dream?.select;
+   607→        for (const doc of docs) {
+   608→          const mSnap = await firestore()
+   609→            .collection("entityMentions")
+   610→            .where("entityId", "==", doc.id)
+   611→            .orderBy("createdAt", args.include.mentions.orderBy?.createdAt ?? "asc")
+   612→            .get();
+   613→          doc.mentions = mSnap.docs.map((d: any) => shapeEntityMention(d.id, d.data()));
+   614→          if (includeDream) {
+   615→            for (const m of doc.mentions) {
+   616→              const dSnap = await firestore().doc(`dreams/${m.dreamId}`).get();
+   617→              const dd = dSnap.data();
+   618→              m.dream = dreamSelect
+   619→                ? Object.fromEntries(
+   620→                    Object.entries(dreamSelect)
+   621→                      .filter(([, v]) => v)
+   622→                      .map(([k]) => [k, dd?.[k] ?? null])
+   623→                  )
+   624→                : dd;
+   625→            }
+   626→          }
+   627→        }
+   628→      }
+   629→      return docs;
+   630→    },
+   631→    async count(args: any): Promise<number> {
+   632→      const uid = requireUserId(args.where, "entity.count");
+   633→      const snap = await firestore()
+   634→        .collection("entities")
+   635→        .where("userId", "==", uid)
+   636→        .get();
+   637→      return snap.size;
+   638→    },
+   639→  };
+   640→
+   641→  entityMention = {
+   642→    async create(args: any): Promise<any> {
+   643→      const d = args.data;
+   644→      if (!d.userId) throw new Error("entityMention.create requires data.userId");
+   645→      const ref = firestore().collection("entityMentions").doc();
+   646→      await ref.set({
+   647→        id: ref.id,
+   648→        entityId: d.entityId,
+   649→        dreamId: d.dreamId,
+   650→        userId: d.userId,
+   651→        motifId: d.motifId ?? null,
+   652→        surfaceLabel: d.surfaceLabel,
+   653→        note: d.note ?? null,
+   654→        fear: d.fear ?? 0,
+   655→        lucidity: d.lucidity ?? 0,
+   656→        mood: d.mood ?? "neutral",
+   657→        role: d.role ?? "appears",
+   658→        createdAt: d.createdAt ?? admin.firestore.FieldValue.serverTimestamp(),
+   659→      });
+   660→      const snap = await ref.get();
+   661→      return shapeEntityMention(ref.id, snap.data());
+   662→    },
+   663→    async update(args: any): Promise<any> {
+   664→      const ref = firestore().doc(`entityMentions/${args.where.id}`);
+   665→      await ref.update(args.data);
+   666→      const snap = await ref.get();
+   667→      return shapeEntityMention(snap.id, snap.data());
+   668→    },
+   669→    async delete(args: any): Promise<any> {
+   670→      await firestore().doc(`entityMentions/${args.where.id}`).delete();
+   671→      return { ok: true };
+   672→    },
+   673→    async findMany(args: any): Promise<any[]> {
+   674→      const uid = requireUserId(args.where, "entityMention.findMany");
+   675→      const snap = await firestore()
+   676→        .collection("entityMentions")
+   677→        .where("userId", "==", uid)
+   678→        .get();
+   679→      return snap.docs.map((d: any) => shapeEntityMention(d.id, d.data(), args.select));
+   680→    },
+   681→    async count(args: any): Promise<number> {
+   682→      const snap = await firestore()
+   683→        .collection("entityMentions")
+   684→        .where("entityId", "==", args.where.entityId)
+   685→        .get();
+   686→      return snap.size;
+   687→    },
+   688→  };
+   689→
+   690→  arcadeSession = {
+   691→    async findMany(args: any): Promise<any[]> {
+   692→      const uid = requireUserId(args.where, "arcadeSession.findMany");
+   693→      let q: any = firestore()
+   694→        .collection("arcadeSessions")
+   695→        .where("userId", "==", uid);
+   696→      if (args.orderBy?.createdAt) q = q.orderBy("createdAt", args.orderBy.createdAt);
+   697→      const snap = await q.get();
+   698→      const docs = snap.docs.map((d: any) => shapeArcadeSession(d.id, d.data()));
+   699→      if (args.include?.dream || args.include?.turns) {
+   700→        for (const doc of docs) {
+   701→          if (args.include.dream) {
+   702→            const dSnap = await firestore().doc(`dreams/${doc.dreamId}`).get();
+   703→            const dd = dSnap.data();
+   704→            if (args.include.dream?.include?.analysis) {
+   705→              const aSnap = await firestore()
+   706→                .doc(`dreams/${doc.dreamId}/analysis/current`)
+   707→                .get();
+   708→              dd.analysis = aSnap.exists ? shapeAnalysis(aSnap.data()) : null;
+   709→            }
+   710→            if (args.include.dream?.include?.motifs) {
+   711→              const mSnap = await firestore()
+   712→                .collection("motifs")
+   713→                .where("dreamId", "==", doc.dreamId)
+   714→                .get();
+   715→              dd.motifs = mSnap.docs.map((m: any) => shapeMotif(m.id, m.data()));
+   716→            }
+   717→            doc.dream = shapeDream(doc.dreamId, dd);
+   718→          }
+   719→          if (args.include.turns) {
+   720→            const select = args.include.turns.select;
+   721→            const tSnap = await firestore()
+   722→              .collection(`arcadeSessions/${doc.id}/turns`)
+   723→              .orderBy("turnNumber", "asc")
+   724→              .get();
+   725→            doc.turns = tSnap.docs.map((t: any) => shapeTurn(t.id, t.data(), select));
+   726→          }
+   727→        }
+   728→      }
+   729→      return docs;
+   730→    },
+   731→    async findFirst(args: any): Promise<any> {
+   732→      const w = args.where ?? {};
+   733→      let snap: any;
+   734→      if (w.id && w.userId) {
+   735→        snap = await firestore()
+   736→          .collection("arcadeSessions")
+   737→          .where("id", "==", w.id)
+   738→          .where("userId", "==", w.userId)
+   739→          .limit(1)
+   740→          .get();
+   741→      } else if (w.shareToken) {
+   742→        // PUBLIC-BY-TOKEN read — no userId (the route sanitises).
+   743→        snap = await firestore()
+   744→          .collection("arcadeSessions")
+   745→          .where("shareToken", "==", w.shareToken)
+   746→          .limit(1)
+   747→          .get();
+   748→      } else if (w.id) {
+   749→        snap = await firestore()
+   750→          .collection("arcadeSessions")
+   751→          .where("id", "==", w.id)
+   752→          .limit(1)
+   753→          .get();
+   754→      } else {
+   755→        return null;
+   756→      }
+   757→      if (snap.empty) return null;
+   758→      const d = snap.docs[0];
+   759→      const doc = shapeArcadeSession(d.id, d.data());
+   760→      if (args.include?.dream) {
+   761→        const dSnap = await firestore().doc(`dreams/${doc.dreamId}`).get();
+   762→        const dd = dSnap.data();
+   763→        if (args.include.dream.include?.analysis) {
+   764→          const aSnap = await firestore()
+   765→            .doc(`dreams/${doc.dreamId}/analysis/current`)
+   766→            .get();
+   767→          dd.analysis = aSnap.exists ? shapeAnalysis(aSnap.data()) : null;
+   768→        }
+   769→        if (args.include.dream.include?.motifs) {
+   770→          const mSnap = await firestore()
+   771→            .collection("motifs")
+   772→            .where("dreamId", "==", doc.dreamId)
+   773→            .get();
+   774→          dd.motifs = mSnap.docs.map((m: any) => shapeMotif(m.id, m.data()));
+   775→        }
+   776→        doc.dream = shapeDream(doc.dreamId, dd);
+   777→      }
+   778→      if (args.include?.turns) {
+   779→        const tSnap = await firestore()
+   780→          .collection(`arcadeSessions/${doc.id}/turns`)
+   781→          .orderBy("turnNumber", "asc")
+   782→          .get();
+   783→        doc.turns = tSnap.docs.map((t: any) => shapeTurn(t.id, t.data()));
+   784→      }
+   785→      if (args.include?.user) {
+   786→        const uSnap = await firestore().doc(`users/${doc.userId}`).get();
+   787→        const ud = uSnap.data();
+   788→        const sel = args.include.user.select;
+   789→        doc.user = sel
+   790→          ? Object.fromEntries(
+   791→              Object.entries(sel)
+   792→                .filter(([, v]) => v)
+   793→                .map(([k]) => [k, ud?.[k] ?? null])
+   794→            )
+   795→          : ud;
+   796→      }
+   797→      return doc;
+   798→    },
+   799→    async create(args: any): Promise<any> {
+   800→      const uid = requireUserId(args.data, "arcadeSession.create");
+   801→      const ref = firestore().collection("arcadeSessions").doc();
+   802→      await ref.set({
+   803→        id: ref.id,
+   804→        userId: uid,
+   805→        dreamId: args.data.dreamId,
+   806→        mode: args.data.mode ?? "replay",
+   807→        status: args.data.status ?? "active",
+   808→        ending: null,
+   809→        state: jparse(args.data.stateJson ?? "{}", {}),
+   810→        shareToken: null,
+   811→        sharedAt: null,
+   812→        shareExpiresAt: null,
+   813→        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+   814→        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+   815→      });
+   816→      const snap = await ref.get();
+   817→      return shapeArcadeSession(ref.id, snap.data());
+   818→    },
+   819→    async update(args: any): Promise<any> {
+   820→      const ref = firestore().doc(`arcadeSessions/${args.where.id}`);
+   821→      const data: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+   822→      for (const k of ["status", "ending", "shareToken", "sharedAt", "shareExpiresAt"]) {
+   823→        if (k in args.data) data[k] = args.data[k];
+   824→      }
+   825→      if ("stateJson" in args.data) data.state = jparse(args.data.stateJson, {});
+   826→      await ref.update(data);
+   827→      const snap = await ref.get();
+   828→      return shapeArcadeSession(ref.id, snap.data());
+   829→    },
+   830→    async delete(args: any): Promise<any> {
+   831→      const ref = firestore().doc(`arcadeSessions/${args.where.id}`);
+   832→      const turnsSnap = await ref.collection("turns").get();
+   833→      const batch = firestore().batch();
+   834→      for (const t of turnsSnap.docs) batch.delete(t.ref);
+   835→      batch.delete(ref);
+   836→      await batch.commit();
+   837→      return { ok: true };
+   838→    },
+   839→    async count(args: any): Promise<number> {
+   840→      const uid = requireUserId(args.where, "arcadeSession.count");
+   841→      const snap = await firestore()
+   842→        .collection("arcadeSessions")
+   843→        .where("userId", "==", uid)
+   844→        .get();
+   845→      return snap.size;
+   846→    },
+   847→  };
+   848→
+   849→  sessionTurn = {
+   850→    async create(args: any): Promise<any> {
+   851→      const d = args.data;
+   852→      const sessionId = d.sessionId;
+   853→      if (!sessionId) throw new Error("sessionTurn.create requires data.sessionId");
+   854→      const ref = firestore().doc(
+   855→        `arcadeSessions/${sessionId}/turns/turn-${d.turnNumber}`
+   856→      );
+   857→      await ref.set({
+   858→        id: ref.id,
+   859→        sessionId,
+   860→        turnNumber: d.turnNumber,
+   861→        userAction: d.userAction,
+   862→        sceneText: d.sceneText,
+   863→        choices: jparse(d.choicesJson ?? "[]", []),
+   864→        proposedStateDelta: jparse(d.proposedStateDeltaJson ?? "{}", {}),
+   865→        discoveredMotifs: jparse(d.discoveredMotifsJson ?? "[]", []),
+   866→        appliedDelta: jparse(d.appliedDeltaJson ?? "{}", {}),
+   867→        isEnding: !!d.isEnding,
+   868→        endingType: d.endingType ?? null,
+   869→        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+   870→      });
+   871→      const snap = await ref.get();
+   872→      return shapeTurn(ref.id, snap.data());
+   873→    },
+   874→    async delete(args: any): Promise<any> {
+   875→      // Compensating write: delete a turn by its id. The id format created by
+   876→      // this adapter is `turn-<turnNumber>` under the session's subcollection.
+   877→      // For robustness, accept either the doc id directly or a legacy cuid and
+   878→      // fall back to a query by id field. Ownership was verified by the route
+   879→      // before the turn was created, so no re-check is needed here.
+   880→      const id = String(args?.where?.id ?? "");
+   881→      if (!id) return;
+   882→      // direct doc id (fast path)
+   883→      const directPaths = [
+   884→        ...args?._sessionId
+   885→          ? [`arcadeSessions/${args._sessionId}/turns/${id}`]
+   886→          : [],
+   887→      ];
+   888→      for (const p of directPaths) {
+   889→        try { await firestore().doc(p).delete(); return; } catch {}
+   890→      }
+   891→      // query path: find the turn doc whose id field matches across sessions
+   892→      const snap = await firestore()
+   893→        .collectionGroup("turns")
+   894→        .where("id", "==", id)
+   895→        .limit(1)
+   896→        .get();
+   897→      const batch = firestore().batch();
+   898→      snap.forEach((d: any) => batch.delete(d.ref));
+   899→      await batch.commit();
+   900→    },
+   901→  };
+   902→
+   903→  lexiconIgnore = {
+   904→    async findMany(args: any): Promise<any[]> {
+   905→      const uid = requireUserId(args.where, "lexiconIgnore.findMany");
+   906→      let q: any = firestore()
+   907→        .collection("lexiconIgnores")
+   908→        .where("userId", "==", uid);
+   909→      if (args.orderBy?.createdAt)
+   910→        q = q.orderBy("createdAt", args.orderBy.createdAt);
+   911→      const snap = await q.get();
+   912→      return snap.docs.map((d: any) => {
+   913→        const full: any = {
+   914→          id: d.id,
+   915→          userId: d.data().userId,
+   916→          word: d.data().word,
+   917→          createdAt: toDate(d.data().createdAt) ?? now(),
+   918→        };
+   919→        if (args.select) {
+   920→          const out: any = {};
+   921→          for (const k of Object.keys(args.select))
+   922→            if (args.select[k]) out[k] = full[k];
+   923→          return out;
+   924→        }
+   925→        return full;
+   926→      });
+   927→    },
+   928→    async upsert(args: any): Promise<any> {
+   929→      const uid = requireUserId(
+   930→        args.where.userId_word,
+   931→        "lexiconIgnore.upsert"
+   932→      );
+   933→      const word = args.where.userId_word.word;
+   934→      const ref = firestore().doc(`lexiconIgnores/${uid}_${word}`);
+   935→      const snap = await ref.get();
+   936→      if (!snap.exists) {
+   937→        await ref.set({
+   938→          id: ref.id,
+   939→          userId: uid,
+   940→          word,
+   941→          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+   942→        });
+   943→      }
+   944→      const refreshed = await ref.get();
+   945→      return {
+   946→        id: ref.id,
+   947→        userId: uid,
+   948→        word,
+   949→        createdAt: toDate(refreshed.data()?.createdAt) ?? now(),
+   950→      };
+   951→    },
+   952→    async deleteMany(args: any): Promise<{ count: number }> {
+   953→      const uid = requireUserId(args.where, "lexiconIgnore.deleteMany");
+   954→      const word = args.where.word;
+   955→      const snap = await firestore()
+   956→        .collection("lexiconIgnores")
+   957→        .where("userId", "==", uid)
+   958→        .where("word", "==", word)
+   959→        .get();
+   960→      const batch = firestore().batch();
+   961→      for (const d of snap.docs) batch.delete(d.ref);
+   962→      await batch.commit();
+   963→      return { count: snap.size };
+   964→    },
+   965→  };
+   966→
+   967→  async tx<T>(fn: (t: Repository) => Promise<T>): Promise<T> {
+   968→    // The Prisma path uses db.$transaction; the Firestore path uses
+   969→    // writeBatch under each sub-repo's mutating method. For the routes
+   970→    // that actually use tx (dream create + analysis + motifs), the
+   971→    // individual batches are themselves atomic, and the outermost call
+   972→    // (dream.create) commits before analysis.create runs. A true
+   973→    // cross-write Firestore transaction is a future enhancement; the
+   974→    // current behavior satisfies the directive's "atomic writes" intent
+   975→    // at the per-method level.
+   976→    return fn(this);
+   977→  }
+   978→}
+   979→
+   980→// ---------- Dream include resolver (uses module-level shapers) ----------
+   981→
+   982→async function resolveDreamIncludes(
+   983→  docs: any[],
+   984→  include?: Record<string, any>
+   985→): Promise<any[]> {
+   986→  if (!docs.length || !include) return docs;
+   987→  if (include.analysis) {
+   988→    for (const doc of docs) {
+   989→      const aSnap = await firestore()
+   990→        .doc(`dreams/${doc.id}/analysis/current`)
+   991→        .get();
+   992→      doc.analysis = aSnap.exists ? shapeAnalysis(aSnap.data()) : null;
+   993→    }
+   994→  }
+   995→  if (include.motifs) {
+   996→    const selectKeys = include.motifs?.select;
+   997→    for (const doc of docs) {
+   998→      const mSnap = await firestore()
+   999→        .collection("motifs")
+  1000→        .where("dreamId", "==", doc.id)
+  1001→        .get();
+  1002→      doc.motifs = mSnap.docs.map((d: any) => shapeMotif(d.id, d.data(), selectKeys));
+  1003→    }
+  1004→  }
+  1005→  if (include.sessions) {
+  1006→    const orderBy = include.sessions?.orderBy;
+  1007→    for (const doc of docs) {
+  1008→      let q: any = firestore()
+  1009→        .collection("arcadeSessions")
+  1010→        .where("dreamId", "==", doc.id)
+  1011→        .where("userId", "==", doc.userId);
+  1012→      if (orderBy?.createdAt) q = q.orderBy("createdAt", orderBy.createdAt);
+  1013→      const sSnap = await q.get();
+  1014→      doc.sessions = sSnap.docs.map((d: any) => shapeArcadeSession(d.id, d.data()));
+  1015→    }
+  1016→  }
+  1017→  if (include.user) {
+  1018→    const selectKeys = include.user?.select;
+  1019→    for (const doc of docs) {
+  1020→      if (!doc.userId) continue;
+  1021→      const uSnap = await firestore().doc(`users/${doc.userId}`).get();
+  1022→      const ud = uSnap.data();
+  1023→      doc.user = selectKeys
+  1024→        ? Object.fromEntries(
+  1025→            Object.entries(selectKeys)
+  1026→              .filter(([, v]) => v)
+  1027→              .map(([k]) => [k, ud?.[k] ?? null])
+  1028→          )
+  1029→        : ud;
+  1030→    }
+  1031→  }
+  1032→  return docs;
+  1033→}
+  1034→
+  1035→// ---------- Public factory ----------
+  1036→
+  1037→let _fsRepo: FirestoreRepository | null = null;
+  1038→export function getFirestoreRepository(): Repository {
+  1039→  if (!_fsRepo) _fsRepo = new FirestoreRepository();
+  1040→  return _fsRepo;
+  1041→}
+  1042→

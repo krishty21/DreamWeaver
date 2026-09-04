@@ -12,6 +12,11 @@
 # Credentials (ADC). No service-account JSON is baked into the image.
 # Secrets (GEMINI_API_KEY etc.) are mounted via Cloud Run's
 # --set-secrets, not stored in the image.
+#
+# NEXT_PUBLIC_* vars are inlined into the client bundle at `next build`
+# time, so they MUST be passed as BUILD ARGS (not runtime env). Pass them
+# via `docker build --build-arg NEXT_PUBLIC_FIREBASE_API_KEY=...` (the
+# cloudbuild.yaml does this in the `docker build` step).
 
 # ---------- Stage 1: deps ----------
 FROM node:20-alpine AS deps
@@ -37,6 +42,22 @@ COPY . .
 # Prisma adapter still imports @prisma/client and needs the generated
 # runtime files even when never called at runtime).
 RUN npx prisma generate
+
+# NEXT_PUBLIC_* vars are inlined at BUILD time — declare them as ARGs so
+# `docker build --build-arg ...` can pass them through to `next build`.
+ARG NEXT_PUBLIC_AUTH_BACKEND=firebase
+ARG NEXT_PUBLIC_FIREBASE_API_KEY
+ARG NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+ARG NEXT_PUBLIC_FIREBASE_PROJECT_ID
+ARG NEXT_PUBLIC_FIREBASE_APP_ID
+ARG NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+ENV NEXT_PUBLIC_AUTH_BACKEND=$NEXT_PUBLIC_AUTH_BACKEND
+ENV NEXT_PUBLIC_FIREBASE_API_KEY=$NEXT_PUBLIC_FIREBASE_API_KEY
+ENV NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=$NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+ENV NEXT_PUBLIC_FIREBASE_PROJECT_ID=$NEXT_PUBLIC_FIREBASE_PROJECT_ID
+ENV NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
+ENV NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=$NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

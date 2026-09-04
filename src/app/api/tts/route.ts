@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import ZAI from "z-ai-web-dev-sdk";
 import { requireUser } from "@/lib/auth";
 import { getRepository } from "@/lib/data/repository";
 import { ttsCacheGet, ttsCacheKey, ttsCacheSet } from "@/lib/tts-cache";
@@ -20,6 +19,21 @@ import { ttsCacheGet, ttsCacheKey, ttsCacheSet } from "@/lib/tts-cache";
 // r7 — pairs with voice capture (ASR). A user who woke up and spoke their
 // dream into the capture field can later have the same memory read back to
 // them by a calm voice — closing the loop on voice-in / voice-out.
+//
+// BACKEND GATING: voice narration uses the z-ai-web-dev-sdk, which is the
+// LOCAL + SANDBOX QA AI backend. When AI_BACKEND=gemini (the production
+// path) this route returns 503 — z-ai-web-dev-sdk is never imported at
+// runtime in production (the dynamic import is gated, so the package is
+// not loaded into the production server bundle's hot path). This keeps
+// the production runtime free of sandbox-only SDK dependencies.
+//
+// (Wiring Gemini-based text-to-speech would be a new feature; this is a
+// release-engineering pass, not a feature pass. The gate is the honest
+// behavior: voice narration is a local-backend affordance.)
+
+function isLocalAI(): boolean {
+  return (process.env.AI_BACKEND ?? "zai") === "zai";
+}
 
 const MAX_CHUNK = 1000; // safe under the 1024 limit, leaves room for punctuation
 
@@ -121,6 +135,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "empty_text" }, { status: 400 });
   }
 
+  // Voice narration requires the local AI backend (z-ai-web-dev-sdk). In
+  // production (AI_BACKEND=gemini) this returns 503 and never imports the
+  // SDK — keeping the production runtime free of sandbox-only deps.
+  if (!isLocalAI()) {
+    return NextResponse.json(
+      {
+        error: "voice_unavailable",
+        message: "Voice narration is available on the local AI backend.",
+      },
+      { status: 503 }
+    );
+  }
+
   const voice = typeof body.voice === "string" ? body.voice : "tongtong";
   const speed =
     typeof body.speed === "number" && body.speed >= 0.5 && body.speed <= 2.0
@@ -156,6 +183,11 @@ export async function POST(req: Request) {
 
   let zai: any;
   try {
+    // Dynamic import — gated by the AI_BACKEND check above. The
+    // z-ai-web-dev-sdk package is only resolved+loaded when AI_BACKEND=zai
+    // (local dev + sandbox QA). In production it is never imported.
+    const ZAIModule = await import("z-ai-web-dev-sdk");
+    const ZAI = ZAIModule.default;
     zai = await ZAI.create();
   } catch (e: any) {
     console.error("[tts] sdk init failed:", e?.message ?? e);
