@@ -24,11 +24,11 @@ RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 COPY package.json bun.lock* package-lock.json* ./
 # The project pins bun as the package manager but the Cloud Build image
-# may not have bun; fall back to npm ci. Both produce identical deps.
+# may not have bun; fall back to npm install. Both produce identical deps.
 RUN if command -v bun >/dev/null 2>&1; then \
       bun install --frozen-lockfile; \
     else \
-      npm ci; \
+      npm install; \
     fi
 
 # ---------- Stage 2: build ----------
