@@ -1,0 +1,332 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* ===========================================================
+   DreamWeaver visual system
+   Light-mode, editorial, lucid, premium journal + soft surrealism.
+   Palette: #F2F1EF / #B1A6A4 / #697184 / #D8CFD0 / #413F3D
+   =========================================================== */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-serif: var(--font-cormorant);
+  --font-mono: var(--font-geist-mono);
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+
+:root {
+  --radius: 0.75rem;
+
+  /* palette */
+  --bg-warm: #f2f1ef;       /* warm off-white */
+  --mauve: #b1a6a4;          /* muted mauve */
+  --slate: #697184;          /* slate blue-grey */
+  --rose: #d8cfd0;           /* dusty rose surface */
+  --ink: #413f3d;            /* near-black */
+
+  --background: #f2f1ef;
+  --foreground: #413f3d;
+
+  --card: #fbfaf8;
+  --card-foreground: #413f3d;
+
+  --popover: #ffffff;
+  --popover-foreground: #413f3d;
+
+  --primary: #413f3d;
+  --primary-foreground: #f2f1ef;
+
+  --secondary: #e9e4e2;
+  --secondary-foreground: #413f3d;
+
+  --muted: #efece9;
+  --muted-foreground: #697184;
+
+  --accent: #697184;
+  --accent-foreground: #f2f1ef;
+
+  --destructive: #a3544a;
+  --border: rgba(65, 63, 61, 0.12);
+  --input: rgba(65, 63, 61, 0.16);
+  --ring: #b1a6a4;
+
+  --chart-1: #697184;   /* slate */
+  --chart-2: #b1a6a4;   /* mauve */
+  --chart-3: #d8cfd0;   /* rose */
+  --chart-4: #9a8b88;   /* deeper mauve */
+  --chart-5: #413f3d;   /* ink */
+
+  --sidebar: #f7f5f3;
+  --sidebar-foreground: #413f3d;
+  --sidebar-primary: #413f3d;
+  --sidebar-primary-foreground: #f2f1ef;
+  --sidebar-accent: #efece9;
+  --sidebar-accent-foreground: #413f3d;
+  --sidebar-border: rgba(65, 63, 61, 0.1);
+  --sidebar-ring: #b1a6a4;
+}
+
+.dark {
+  /* A restrained "nocturne" mode — deep, low-contrast, never neon. */
+  --background: #1f1d1c;
+  --foreground: #ece9e6;
+  --card: #262423;
+  --card-foreground: #ece9e6;
+  --popover: #262423;
+  --popover-foreground: #ece9e6;
+  --primary: #ece9e6;
+  --primary-foreground: #1f1d1c;
+  --secondary: #322f2e;
+  --secondary-foreground: #ece9e6;
+  --muted: #2c2a29;
+  --muted-foreground: #9a8f8c;
+  --accent: #697184;
+  --accent-foreground: #ece9e6;
+  --destructive: #c6685e;
+  --border: rgba(255, 255, 255, 0.08);
+  --input: rgba(255, 255, 255, 0.12);
+  --ring: #b1a6a4;
+  --chart-1: #b1a6a4;
+  --chart-2: #697184;
+  --chart-3: #d8cfd0;
+  --chart-4: #8a7f7d;
+  --chart-5: #ece9e6;
+  --sidebar: #262423;
+  --sidebar-foreground: #ece9e6;
+  --sidebar-primary: #ece9e6;
+  --sidebar-primary-foreground: #1f1d1c;
+  --sidebar-accent: #322f2e;
+  --sidebar-accent-foreground: #ece9e6;
+  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar-ring: #b1a6a4;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html, body {
+    @apply bg-background text-foreground;
+  }
+  body {
+    font-feature-settings: "ss01", "ss02", "cv01", "cv03";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--mauve) 35%, transparent);
+    color: var(--ink);
+  }
+}
+
+/* ---------- Typography helpers ---------- */
+.font-display { font-family: var(--font-cormorant), Georgia, serif; }
+.font-body { font-family: var(--font-geist-sans), system-ui, sans-serif; }
+.font-data { font-family: var(--font-geist-mono), ui-monospace, monospace; }
+
+.tracking-display { letter-spacing: -0.015em; }
+.tracking-caps { letter-spacing: 0.18em; }
+
+/* Editorial text balance for headlines */
+.balance { text-wrap: balance; }
+.pretty { text-wrap: pretty; }
+
+/* ---------- Atmospheric layers ---------- */
+/* Soft dream-field: layered radial gradients + subtle grain.
+   Responds to mood via data-mood attribute on a parent. */
+.dream-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(60rem 40rem at 12% -10%, rgba(216, 207, 208, 0.55), transparent 60%),
+    radial-gradient(50rem 36rem at 110% 0%, rgba(177, 166, 164, 0.35), transparent 55%),
+    radial-gradient(70rem 50rem at 50% 120%, rgba(105, 113, 132, 0.18), transparent 60%),
+    linear-gradient(180deg, #f6f4f1 0%, #efece9 100%);
+}
+.dream-field[data-mood="tense"] {
+  background:
+    radial-gradient(40rem 30rem at 20% -5%, rgba(120, 95, 92, 0.30), transparent 55%),
+    radial-gradient(50rem 40rem at 105% 10%, rgba(80, 78, 76, 0.30), transparent 60%),
+    linear-gradient(180deg, #efece9 0%, #e7e2df 100%);
+  filter: saturate(0.92) contrast(0.98);
+}
+.dream-field[data-mood="lucid"] {
+  background:
+    radial-gradient(60rem 40rem at 10% -10%, rgba(245, 240, 235, 0.85), transparent 60%),
+    radial-gradient(50rem 40rem at 100% 0%, rgba(216, 207, 208, 0.6), transparent 55%),
+    linear-gradient(180deg, #faf8f5 0%, #f1eee9 100%);
+}
+.dream-field[data-mood="melancholic"] {
+  background:
+    radial-gradient(60rem 40rem at 15% -10%, rgba(150, 160, 175, 0.30), transparent 60%),
+    radial-gradient(50rem 40rem at 100% 5%, rgba(120, 130, 145, 0.22), transparent 55%),
+    linear-gradient(180deg, #efece9 0%, #e9e5e1 100%);
+}
+.dream-field[data-mood="surreal"] {
+  background:
+    radial-gradient(50rem 36rem at 8% -8%, rgba(216, 207, 208, 0.6), transparent 60%),
+    radial-gradient(46rem 34rem at 100% 8%, rgba(177, 166, 164, 0.45), transparent 55%),
+    radial-gradient(60rem 44rem at 50% 120%, rgba(105, 113, 132, 0.20), transparent 60%),
+    linear-gradient(180deg, #f6f3ef 0%, #ece7e3 100%);
+}
+
+/* Slow drifting orb for ambient motion */
+.dream-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(60px);
+  opacity: 0.5;
+  animation: drift 24s ease-in-out infinite alternate;
+}
+@keyframes drift {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(2rem, -1.5rem, 0) scale(1.08); }
+  100% { transform: translate3d(-1.5rem, 1rem, 0) scale(0.96); }
+}
+
+/* Subtle film-grain veil */
+.grain::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.045 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+/* Hairline rule used throughout the editorial layout */
+.hairline { border-top: 1px solid var(--border); }
+
+/* Soft card surface used for journal/arcade panels */
+.surface {
+  background: color-mix(in srgb, var(--card) 92%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.6) inset,
+    0 1px 2px rgba(65, 63, 61, 0.04),
+    0 12px 30px -18px rgba(65, 63, 61, 0.18);
+}
+.surface-quiet {
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+/* Tag chip for motifs */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--rose) 70%, transparent);
+  color: var(--ink);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  border: 1px solid color-mix(in srgb, var(--mauve) 40%, transparent);
+}
+
+/* State meter used in the arcade */
+.meter-track {
+  position: relative;
+  height: 6px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--muted) 80%, transparent);
+  overflow: hidden;
+}
+.meter-fill {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  transform-origin: left center;
+  transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Scene text styling */
+.scene-text {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-size: 1.18rem;
+  line-height: 1.65;
+  letter-spacing: 0.005em;
+}
+
+/* Fade/slide entrance utility */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.rise { animation: rise 600ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+@keyframes pulseSoft {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 0.85; }
+}
+.pulse-soft { animation: pulseSoft 3.4s ease-in-out infinite; }
+
+/* Reading column for journal/dream prose */
+.prose-dream {
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-size: 1rem;
+  line-height: 1.7;
+  color: color-mix(in srgb, var(--foreground) 88%, transparent);
+}
+.prose-dream p + p { margin-top: 1rem; }
+
+/* Custom scrollbar for long lists */
+.scroll-elegant {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--mauve) 55%, transparent) transparent;
+}
+.scroll-elegant::-webkit-scrollbar { width: 8px; height: 8px; }
+.scroll-elegant::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--mauve) 50%, transparent);
+  border-radius: 9999px;
+}
+.scroll-elegant::-webkit-scrollbar-track { background: transparent; }
+
+/* Focus ring */
+.focus-ring:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}

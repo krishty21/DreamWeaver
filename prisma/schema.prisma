@@ -1,0 +1,165 @@
+// DreamWeaver Prisma schema
+// Conceptual entities (per cross-module contract): USER, DREAM, DREAM ANALYSIS,
+// MOTIF, PATTERN, ARCADE SESSION, SIMULATION STATE.
+// "MODEL OUTPUT IS NEVER TRUSTED AS APPLICATION STATE" — AI-proposed fields are
+// stored as proposed values and validated by the app before becoming authoritative.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  password  String // bcrypt hash — never exposed
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  dreams    Dream[]
+  sessions  ArcadeSession[]
+}
+
+// A single recorded dream. The raw user input is preserved verbatim; structured
+// analysis lives in DreamAnalysis. This preserves OBSERVED vs INFERRED vs GENERATED.
+model Dream {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // The user's original, unedited stream-of-consciousness.
+  rawText   String
+  title     String? // short evocative title (AI-proposed, user can ignore)
+  // Soft mood used by the visual atmosphere. Derived from analysis.
+  mood      String? @default("neutral") // neutral | tense | lucid | melancholic | surreal
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  analysis  DreamAnalysis?
+  motifs    Motif[]
+  sessions  ArcadeSession[]
+
+  @@index([userId, createdAt])
+}
+
+// Structured dream memory produced by Gemini and validated by the app.
+// All sub-fields are stored as JSON strings (SQLite has no native list/scalar-json).
+// `confidence` markers are AI-reported and treated as advisory only.
+model DreamAnalysis {
+  id            String   @id @default(cuid())
+  dreamId       String   @unique
+  dream         Dream    @relation(fields: [dreamId], references: [id], onDelete: Cascade)
+
+  summary       String // 1–3 sentence reflective summary
+  emotionsJson  String // JSON: [{ emotion, intensity(0-1), confidence }]
+  symbolsJson   String // JSON: [{ symbol, note?, confidence? }]
+  motifsJson    String // JSON: [{ motif, note?, confidence? }]
+  peopleJson    String // JSON: [{ name, role?, note? }]
+  locationsJson String // JSON: [{ place, note? }]
+  actionsJson   String // JSON: [{ action, note? }]
+  lucidity      Float   @default(0.3) // 0–1 estimated dream lucidity
+  lucidityNote  String?
+  fear          Float   @default(0.2) // 0–1 emotional valence (fear/tension)
+  uncertainty   Float   @default(0.3) // 0–1
+  interpretationsJson String // JSON: [{ text, confidence }] — clearly labelled "possible"
+  relationshipsJson   String // JSON: [{ from, to, relation }] within this dream
+  historicalConnectionsJson String // JSON: [{ motifId?, motif, dreamIds: [], note }]
+  // Raw model response kept for audit / "what did Gemini actually say" transparency.
+  modelRawJson  String
+
+  createdAt DateTime @default(now())
+
+  @@index([dreamId])
+}
+
+// Motif instances per dream. Used for longitudinal pattern computation.
+// A "motif" is any recurring element (symbol, place, person, emotion, action).
+model Motif {
+  id        String   @id @default(cuid())
+  dreamId   String
+  dream     Dream    @relation(fields: [dreamId], references: [id], onDelete: Cascade)
+  userId    String
+  // Normalised label, e.g. "ocean", "faceless figure", "pursuit".
+  label     String
+  type      String   @default("symbol") // symbol | person | place | action | emotion
+  note      String?
+  confidence Float   @default(0.5) // AI-reported, advisory
+
+  @@index([userId, label])
+  @@index([dreamId])
+}
+
+// An interactive re-entry into a historical dream. Mode: replay | rewrite | confront.
+model ArcadeSession {
+  id         String   @id @default(cuid())
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dreamId    String
+  dream      Dream    @relation(fields: [dreamId], references: [id], onDelete: Cascade)
+  mode       String   @default("replay") // replay | rewrite | confront
+  status     String   @default("active") // active | ended
+  ending     String? // collapse | escape | control | unresolved | transformed
+  // Authoritative simulation state — controlled by the app, never directly by model text.
+  stateJson  String   @default("{}")
+  turns      SessionTurn[]
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, createdAt])
+  @@index([dreamId])
+}
+
+// One turn in the arcade. Records what the user did and what the model generated.
+// `proposedStateDeltaJson` is the AI's *proposed* change; `applied` records what the
+// app actually committed (after validation).
+model SessionTurn {
+  id            String   @id @default(cuid())
+  sessionId     String
+  session       ArcadeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turnNumber    Int
+  // The user's move (free text or a selected choice id).
+  userAction    String
+  // AI-generated narrative scene for this turn.
+  sceneText     String
+  // AI-proposed choices for next turn (validated/clamped by app).
+  choicesJson   String   @default("[]") // JSON: [{ id, label, hint? }]
+  // AI-proposed state delta — advisory only.
+  proposedStateDeltaJson String @default("{}")
+  // Discovered motifs this turn (AI-proposed, deduped against known motifs).
+  discoveredMotifsJson   String @default("[]")
+  // What the app actually applied to authoritative state.
+  appliedDeltaJson       String @default("{}")
+  // Was this the final turn?
+  isEnding      Boolean  @default(false)
+  endingType    String?
+  createdAt      DateTime @default(now())
+
+  @@index([sessionId, turnNumber])
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+}
