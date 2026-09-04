@@ -468,3 +468,140 @@
    468→- Screenshots this round in /home/z/my-project/download/: qa-r8-landing.png, qa-r8-journal.png, qa-r8-patterns.png, qa-r8-atlas.png, qa-r8-arcade.png, qa-r8-capture.png, qa-r8-profile.png, qa-r8-detail.png, qa-r8-session.png, qa-r8-shared.png, qa-r8-mobile-dashboard.png, qa-r8-mobile-journal.png, qa-r8-mobile-patterns.png, qa-r8-mobile-atlas.png, qa-r8-mobile-detail.png, qa-r8-mobile-session.png, qa-r8-dashboard.png, qa-r8-dashboard-final.png, qa-r8-dashboard-streak-pulse.png, qa-r8-audio-loading.png, qa-r8-audio-fresh.png, qa-r8-audio-cached.png, qa-r8-audio-cached-again.png, qa-r8-atlas-stacked.png, qa-r8-mobile-atlas.png, qa-r8-mobile-atlas-stacked.png, qa-r8-atlas-final.png, qa-r8-capture-final.png, qa-r8-capture-focus-glow.png.
    469→- QA credentials: lucia@dreamweaver.test / qa-test-123. Live demo share link (never-expires): token 924dce21c4998dad9a1e848caec4df20b3e80cc6ec78a25f (#/shared/...). Active test arcade session: cmtd39tzl0012l64i0d9xswep (confront mode, 4 turns). Test dream with active TTS narration: cmtd52dog0001l6hdqt8yipzc ("Museum of Hidden Faces") — first listen synthesises fresh (~12s), second listen served from cache (~20ms).
    470→
+   471→---
+   472→Task ID: r9 (webDevReview cron round 9)
+   473→Agent: main (webDevReview)
+   474→Task: QA pass; new features — ⌘K command palette (fuzzy dream search + quick actions), Dream Lexicon word cloud (Patterns) with journal search prefill, dashboard weekly digest card, profile records strip; mobile overflow fix for the digest; styling polish (palette/lexicon/records CSS)
+   475→
+   476→## Current project status / assessment
+   477→- Round started stable: dev server healthy (200 on every route exercised), ESLint 0 problems, no runtime errors in dev.log.
+   478→- Opening QA pass via agent-browser (desktop 1280 + mobile 390): landing, dashboard, journal, patterns, atlas, arcade, arcade session, capture, profile, dream detail, shared view — all rendered with 0 console errors and scrollWidth === clientWidth everywhere. Voice capture (ASR), re-analyze, keyboard shortcuts, journal search/export from earlier rounds all confirmed present and working (the original "next-phase ideas" list is fully implemented), so this round proposed NEW requirements.
+   479→
+   480→## Goals / completed modifications / verification results
+   481→
+   482→1. FEATURE (flagship) — Command palette (⌘K / Ctrl+K).
+   483→   - New `src/components/shell/command-palette.tsx`. ⌘K previously jumped straight to capture; it now opens a full palette. Muscle memory preserved: "Capture a dream" is always the first item, so ⌘K → Enter = capture.
+   484→   - Structure: outer component owns the global hotkey (toggle) and mounts a fresh `<PaletteDialog>` per open — query/selection state starts clean by construction, no reset effects (this shape was chosen specifically to satisfy the new react-hooks/set-state-in-effect lint rule).
+   485→   - Fuzzy scoring: substring-at-start (3) > substring-anywhere (2) > subsequence (0.1) > none (dropped); title matches rank above raw-text (×0.95) and reflection-summary (×0.9). Results show serif title + mono date + an italic context snippet windowed ±46 chars around the first match.
+   486→   - Quick actions: Capture, Today, Journal, Patterns, Atlas, Arcade. No query → actions + 4 most recent dreams. Query → up to 7 dream results sorted by score then date.
+   487→   - Keyboard: ↑/↓ (wrapping), Home/End, Enter opens, Esc/backdrop/esc-button closes. Selection clamp is derived (`selIdx = min(sel, len-1)`) instead of an effect. Hover syncs selection. aria: dialog + modal + listbox/option/aria-selected + aria-controls; selected item scrolls into view.
+   488→   - Empty state offers "Search the journal for '<query>'" which hands the query to the journal via a new one-shot `journalQuery` store field.
+   489→   - Data from the shared react-query ["dreams"] cache (staleTime 30s) — opens with zero latency.
+   490→   - TopNav: desktop gets a quiet "Search dreams… ⌘K" pill trigger (italic serif + kbd hint); the mobile nav row gets a compact Search button. Footer kbd legend updated (⌘K search · C capture · J journal).
+   491→   - Styling: paper-warm `.palette-dialog` (background mix 92% + white 8%, mauve hairline border, layered shadow), `.palette-item` rows with a 2px ink indicator bar that grows on selection, icon chips that tint rose when active, mono footer hints (↑↓ navigate · ↵ open · N dreams found). Framer-motion: backdrop fade + dialog scale/translate entrance.
+   492→   - Verified live: Ctrl+K opens (dialog + listbox in a11y tree, "Capture a dream" selected); typing "museum" ranks "Museum of Hidden Faces" first with snippet; Enter navigates to #/dream/cmtd52dog...; "zzzzqq" empty state shows the journal fallback; clicking it lands on #/journal with the search field pre-filled "zzzzqq"; palette fits mobile 390 (dialog width 358, no overflow); Esc closes.
+   493→
+   494→2. FEATURE — Dream Lexicon (Patterns view) + journal search prefill.
+   495→   - Server: `computeLexicon` in patterns.ts — word frequency across raw dream texts with an inline ~250-word English stopword list, length 3–16 filter, ranked by dreamCount (words recurring ACROSS dreams) then raw count, top 28. New `LexiconWord` type + `lexicon` field on PatternReport.
+   496→   - Client: "The lexicon of your dreams" section below the patterns grid — a baseline-aligned typographic cloud (`.lexicon-cloud`). Font size scales 15–34px by frequency; every 5th word italic for editorial rhythm; weight 600 for top-frequency words. Hover lifts the word (-2px) with a rose text-shadow and reveals a mono "×N" dream-count badge (also in title attr + aria-label). Words fade in with a 35ms stagger.
+   497→   - Clicking a word sets `journalQuery` in the store and navigates to the journal, which consumes the handoff: the search field is pre-filled during render using React's "adjust state when a value changes" pattern (`if (journalQuery !== consumedQuery) setState` — no effect), while the store clear + focus() run in an effect (external-system syncs). Verified live: clicking "ocean" in the cloud → #/journal with search "ocean".
+   498→   - Copy clearly labels provenance: "counted across every raw dream — not chosen by the model".
+   499→
+   500→3. FEATURE — Weekly digest card (dashboard).
+   501→   - New `WeeklyDigest` component between the longitudinal insight and the deep content. Rolling 7-night window vs the prior 7 nights, all computed app-side from the cached dreams data: dreams captured (+/- delta vs last week), dominant mood (×count), words remembered (whitespace count on raw text), and up to 3 new motifs (labels appearing this week that never appeared before the window).
+   502→   - Hidden entirely when no dream was recorded in the last 7 days (returns null — no empty cards).
+   503→   - Verified live: "4 (+4 vs last week) dreams captured · surreal dominant mood · 3× · 160 words remembered · repetition, doors, walls new motifs · Computed app-side — never the model."
+   504→   - BUG FOUND + FIXED during QA: the new-motifs value span used `inline-block truncate`, which kept shrink-to-fit width (204px) inside the flex-column tile and pushed the mobile dashboard to 407px > 390px viewport. Fix: `block w-full truncate` on the span + hard guards in CSS (`.digest-stat-value { max-width: 100%; overflow-wrap: anywhere }`). Re-verified: mobile dashboard 390/390.
+   505→
+   506→4. FEATURE — Records strip (profile).
+   507→   - New `RecordsStrip` — five tiles: most lucid dream (% + title, click opens it), longest streak (nights, computed from consecutive calendar days), most recurring motif (from patterns topMotifs, click opens Atlas), words dreamed (total), where it began (first dream date + title, click opens it). Tiles use `.record-tile` (mauve-tinted, lift on hover); button tiles where navigation makes sense, static otherwise. Sub-caption on the section: "Records — kept by the app, not the model."
+   508→   - Data from the shared ["dreams"] + ["patterns"] caches — zero extra requests after first load.
+   509→   - Verified live: all five tiles render with correct values (40% Museum of Hidden Faces · 1 night · repetition ×4 · 160 words · Aug 28, 2026 Endless School Chase); clicking the lucid tile navigates to the dream.
+   510→
+   511→5. STYLING / POLISH — new CSS blocks in globals.css.
+   512→   - `.palette-dialog` / `.palette-item` / `.palette-item-icon` (+ active states, focus-visible outlines) — editorial palette chrome.
+   513→   - `.lexicon-cloud` / `.lexicon-word` / `.lexicon-count` — baseline-rhythm cloud with hover lift + count reveal.
+   514→   - `.digest-stat` / `.digest-stat-value` / `.digest-stat-label` — serif numerals + mono captions shared by the digest and records tiles; max-width guard added after the mobile audit.
+   515→   - `.record-tile` — hover lift + border deepening for the trophy-shelf tiles.
+   516→   - All new interactive elements have :focus-visible ring styling.
+   517→
+   518→## Verification summary
+   519→- Lint: ESLint 0 problems (after restructuring to satisfy react-hooks/set-state-in-effect: palette now fresh-mounts its dialog; journal prefill consumes during render).
+   520→- TS: tsc 0 errors in src/ (pre-existing tts route Buffer typings unchanged).
+   521→- Desktop (1280) sweep: dashboard, journal, patterns, atlas, arcade, capture, profile — all 1280/1280, 0 console errors, 0 page errors.
+   522→- Mobile (390) sweep: dashboard (after digest fix), journal, patterns, atlas, arcade, capture, profile — all 390/390.
+   523→- Palette verified live: open/toggle via Ctrl+K, fuzzy ranking, snippet windows, keyboard nav, Enter navigation, empty-state journal fallback, esc/backdrop close, mobile fit (358px dialog in 390px viewport).
+   524→- Single-key shortcuts (J, X, C, P, A, T) still work after the page.tsx refactor (verified J → journal, X → atlas).
+   525→- Lexicon → journal prefill handoff verified live end-to-end.
+   526→- Weekly digest values cross-checked against the test data (4 dreams this week, surreal 3×, 160 words).
+   527→- Records strip values verified; tile navigation verified.
+   528→- Fresh-reload console check: 0 errors (two stale Fast-Refresh entries from mid-edit HMR were cleared and did not reappear).
+   529→
+   530→## Unresolved issues / risks / next-phase recommendations
+   531→- The lexicon stopword list is hand-curried English; non-English dream text will surface grammar words. A locale-aware list (or letting the user ignore a word) would help. Low priority for the sandbox.
+   532→- The palette searches only dream title/raw/summary. Wiring motif labels + people/places into the fuzzy haystack would make it a true "search everything" surface — the journal filter already searches those fields, so aligning the two haystacks is a small follow-up.
+   533→- The weekly digest's "new motifs" uses motif instances from analyses; if Gemini drops a motif label between re-analyses, the digest may briefly over-report "new" motifs after a re-reflect. Acceptable.
+   534→- The records strip is hidden until both queries resolve (returns null) — on a cold profile visit it appears a beat after the page loads. A skeleton would smooth this if it bothers anyone.
+   535→- ⌘K is now toggle (open/close). If the palette ever gains input history, pressing ⌘K while focused in the palette input would need to not double-close (currently fine — the input consumes the keydown? verified toggle works from open state).
+   536→- Next-phase ideas, in priority order: (1) align palette + journal search haystacks (motifs/people/places); (2) lexicon word "ignore" affordance + locale stopword sets; (3) arcade session share/export (read-only "story" of a finished session); (4) comparative two-dream "echo" view from the Atlas co-occurrence chips; (5) print stylesheet for dream detail.
+   537→- Screenshots this round in /home/z/my-project/download/: qa-r9-palette.png, qa-r9-palette-search.png, qa-r9-palette-empty.png, qa-r9-palette-journal-fallback (in qa-r9-journal-prefill.png), qa-r9-lexicon.png, qa-r9-digest.png, qa-r9-records.png, qa-r9-mobile-digest.png, qa-r9-mobile-palette.png, qa-r9-topnav.png, qa-r9-dashboard-final.png, qa-r9-patterns-final.png, plus the opening QA shots qa-r9-dashboard/session.png.
+   538→- QA credentials: lucia@dreamweaver.test / qa-test-123. Live demo share link (never-expires): token 924dce21c4998dad9a1e848caec4df20b3e80cc6ec78a25f (#/shared/...). Active test arcade session: cmtd39tzl0012l64i0d9xswep (confront mode, 4 turns). Test dream: cmtd52dog0001l6hdqt8yipzc ("Museum of Hidden Faces").
+   539→
+   540→---
+   541→Task ID: r10 (webDevReview cron round 10)
+   542→Agent: main (webDevReview)
+   543→Task: Opening QA pass; new features — palette haystack alignment (motifs/people/places/symbols/actions + via pills), arcade session STORY sharing (public read-only narrative + share API + store/`#/story/<token>` route), Dream Echo two-dream comparison view (`#/echo/<a>/<b>` + Atlas chip + dream-detail entry points), print stylesheet for dream detail (+ Print button); styling polish (story reading-progress hairline, drop cap, copy-link chip, echo folded-sheet, via pills); mobile overflow fix on dream-detail action row.
+   544→
+   545→## Current project status / assessment
+   546→- Round started stable: dev server healthy (200 on every route), ESLint 0 problems, no runtime errors in dev.log.
+   547→- Opening QA pass (desktop 1280 + mobile 390): landing, dashboard, journal, patterns, atlas, arcade, session, capture, profile, dream detail, shared view — all rendered with 0 console errors and no horizontal overflow. No bugs found; the round proceeded to new features (the r9 next-phase recommendations, in priority order).
+   548→
+   549→## Goals / completed modifications / verification results
+   550→
+   551→1. FEATURE — Palette + journal search haystack alignment (r9 recommendation #1).
+   552→   - The ⌘K palette previously searched only title + rawText + summary. It now ALSO fuzzy-scores every structured element Gemini surfaced: people (name), motifs (label), symbols (label), places (label), actions (label) — matching the journal's haystack (plus actions).
+   553→   - VIA_FIELDS weight table: person 0.93 > motif 0.9 > symbol 0.88 > place 0.87 > action 0.86 (all < raw 0.95 < title 1.0) so an exact title match always outranks an exact element match, and a person name outranks a motif.
+   554→   - Result rows that matched via a structured element show a small `.palette-via-tag` pill (mono, uppercase, mauve-tinted, rose when the row is selected) naming the field, and the snippet reads like: '"doors" — the motif Gemini surfaced in this dream'. The via is chosen from the highest-weighted strong match even when ranking was decided by raw text.
+   555→   - Verified live: query "guard" → first result "Museum of Hidden Faces" with pill "action" + '"guard appearing" — the action Gemini surfaced in this dream'; query "doors" → two results both showing the "motif" pill. Pill computed style: background color-mix mauve 18%, border-radius 9999px.
+   556→
+   557→2. FEATURE (flagship) — Arcade session STORY sharing (r9 recommendation #3).
+   558→   - Prisma: ArcadeSession gains `shareToken String?` + `sharedAt DateTime?` with `@@unique([shareToken])` (schema v4; db pushed; db.ts SCHEMA_VERSION bumped to 'v4-story-share').
+   559→   - New API POST/DELETE `/api/arcade/sessions/[id]/share`: ownership-enforced; POST requires the session to be ENDED (409 "only a finished session can be shared as a story"); token = 48-hex randomBytes secret, stable across re-shares; DELETE nulls it. 
+   560→   - New PUBLIC API GET `/api/shared/session/[token]`: sanitised story payload — mode, ending, day-precision dates, dream TITLE ONLY (never rawText, never motifs/analysis, never model internals like proposedDeltaJson/appliedDeltaJson), author first name, final validated meters (fear/lucidity/stability/agency), deduped discovered motifs, and every turn (n + userAction + sceneText). 404s after revoke.
+   561→   - Store: new "story" view; `#/story/<token>` parsed into activeShareToken; page.tsx renders StoryView in the fullBleed branch (public chrome only — no TopNav/Footer/CommandPalette even for authed visitors), surreal background mood.
+   562→   - New `src/components/views/story-view.tsx`: editorial reading page — masthead ("A RE-ENTERED DREAM · confronted", dream title, "Lucia went back in on August 28, 2026 and stayed 4 turns"), mode-descriptor line per mode, turn-by-turn narrative with mono turn numbers + "the entry" label on turn 01, italic "You:" action lines, DROP CAP on the first scene (`.story-dropcap::first-letter`, 3.1em Cormorant), "Found along the way" discovered-motif chips, ending card with ornament rule, final 4 meters, provenance note ("scenes generated scene-by-scene by an AI as the dreamer acted; the state meters were validated by the application, not the model"), CTA + footer. Error state: "This story is no longer being told."
+   563→   - ArcadeSessionView (ended sessions): new StoryShare component — "Share this story" pill button → POST → link copied to clipboard + toast; when shared: story-link chip (copy), "Read as story" (navigates #/story/<token> in-app), "withdraw" (revoke). Shared-state row shows day-precision sharedAt.
+   564→   - Verified live end-to-end: PATCH-ended the confront test session → share button appears → POST → token created → public #/story/<token> renders full 4-turn narrative + 9 discovered motifs + ending + meters (70/75/40/50) → "Read as story" navigates correctly → withdraw → token cleared → story URL 404s with the withdrawn message → re-shared for the live demo link.
+   565→
+   566→3. FEATURE — Dream Echo: comparative two-dream view (r9 recommendation #4).
+   567→   - New view `#/echo/<a>/<b>` (store: activeDreamId + echoDreamId, hash round-trip, navigate opts.echoId). EchoView computes EVERYTHING app-side from the cached /api/dreams payload (no new model calls): shared motifs (case-insensitive label intersection over motif instances, with type + note), shared people/places/emotions, nights apart, word counts.
+   568→   - Layout: "Two nights, one thread." header + nights-apart line; two EchoSide cards side by side (stacked on mobile; second card overlaps -12px with a lifted-edge shadow `.echo-side-second` — the folded-sheet read); motif chips that exist in BOTH dreams glow rose (`.echo-shared-chip`); each side clicks through to its dream.
+   569→   - "The thread between them" section: one row per shared element (icon by type: person/place/action/symbol, serif label, mono "type · in both dreams" tag, per-dream note) + "same feelings / same places" summary lines.
+   570→   - "The drift between them": fear/lucidity/uncertainty from→to meters with delta badges (±N tinted rose for rising, mauve for falling, flat for <3) — from-bar in mauve, to-bar in rose gradient.
+   571→   - TWO ENTRY POINTS: (a) Atlas co-occurrence chips are now buttons — clicking computes the two most recent dreams containing BOTH motif labels and opens the echo (falls back to opening the single dream if only one exists); (b) dream detail historical-connections rows get an "Echo with the prior dream" affordance (dashed-underline link) comparing the current dream with the most recent prior dream sharing that motif.
+   572→   - Verified live: Atlas chip "doors × repetition" → #/echo/cmtd52dog.../cmtd41ufx... → "Both dreamed on the same night — two rooms of the same house. 2 elements returned in both dreams", thread = Doors + Repetition, same feelings = curiosity, drift = fear +10 (30→40), lucidity -10 (40→30), uncertainty +20 (40→60). Dream-detail echo buttons verified (3 historical connections each navigate correctly).
+   573→
+   574→4. FEATURE — Print stylesheet for dream detail (r9 recommendation #5).
+   575→   - `@media print` block in globals.css: @page 18mm/16mm margins; hides header/footer/.dream-field/.no-print/[data-print=hide]; flattens .surface/.surface-quiet to white with a #d9d1d2 hairline; break-inside: avoid on sections + break-after: avoid on headings; `.print-only` becomes visible.
+   576→   - Dream detail: new Print button (Printer icon → window.print()); `.no-print` on the action row, SharePanel wrapper, audio player, re-enter CTA, echo-cta links; paper-only MASTHEAD ("DREAMWEAVER · DREAM RECORD — printed <date>") at the top and COLOPHON ("Reflections are AI-generated and advisory; the raw memory is your own — DreamWeaver") at the bottom (outside the analysis conditional so it prints for every dream).
+   577→   - Verified via agent-browser `pdf` command (Chromium print media): 4-page PDF; masthead + sections 01–07 + colophon render; nav buttons, share panel, audio, re-enter CTA, and echo links all hidden. (qa-r10-print-test.pdf in download/.)
+   578→
+   579→5. STYLING / POLISH —
+   580→   - Story reading-progress hairline: 2px fixed track at the very top of the public story page; rose←mauve gradient fill scales with scroll (verified: matrix(0.377, 0, 0, 1) after scrolling 600px).
+   581→   - Story copy-link chip in the public header (CopyStoryLink) — copies the current URL, "copied" confirmation state.
+   582→   - Drop cap on the story's first scene; `.story-action` italic action lines; `.story-link-chip` rose-tinted mono chip (shared by session-share row and public story header).
+   583→   - Echo folded-sheet: second column z-index 2 + `-14px 0 34px -22px` lifted-edge shadow + mauve left border (verified computed style).
+   584→   - `.palette-via-tag` pills (mauve 18% bg, 9999px radius, rose-tinted on the active row).
+   585→   - `.echo-thread-row` hover nudge (translateX(2px) + border deepening), `.echo-drift-*` badge/bar system, `.echo-cta` dashed-underline affordance.
+   586→   - BUG FOUND + FIXED during QA: adding the Print button pushed the dream-detail action row to 429px on mobile 390 (the inner button group didn't wrap internally). Fix: `flex flex-wrap justify-end` on the group. Re-verified 390/390.
+   587→
+   588→## Verification summary
+   589→- Lint: ESLint 0 problems. TS: 0 new errors (only the pre-existing tts route Buffer typings).
+   590→- Desktop (1280) sweep: dashboard, journal, patterns, atlas, arcade, capture, profile, dream detail, session, echo, story, shared — all 1280/1280, 0 console errors.
+   591→- Mobile (390) sweep: same 11 views — all 390/390 (after the action-row fix).
+   592→- Palette: via pills render + style verified for "guard" (action) and "doors" (motif) queries.
+   593→- Story share: full lifecycle verified live (share → public render → in-app read → withdraw → 404 → re-share).
+   594→- Echo: both entry points verified; shared-thread + drift values cross-checked against the test data.
+   595→- Print: PDF text-verified via pdfplumber (masthead/colophon present, interactive chrome absent).
+   596→- Dev server restarted twice this round (Prisma client reload after schema push + Turbopack CSS chunk staleness); both times via .zscripts/restart-dev.sh after killing stale PIDs. Dev server healthy, dev.log clean at round end.
+   597→
+   598→## Unresolved issues / risks / next-phase recommendations
+   599→- Turbopack CSS staleness recurred (documented in r8, worse this round): globals.css edits made AFTER a dev-server restart did not reach the compiled CSS chunk even after touching tsx files; only another full restart picked them up. RULE for r11+: after ANY globals.css edit, verify a marker rule is live in document.styleSheets (fetch the css href and search) — do not trust touch alone; budget for one restart per round if CSS is edited late.
+   600→- The echo view's shared-motif detection is case-insensitive label matching over motif instances; it does NOT fuzzy-match near-labels (e.g. "faceless person" vs "faceless figure" would not match). A normalisation pass (alias table or embedding similarity) would deepen the thread detection — future enhancement.
+   601→- The story share has no expiry option (unlike dream shares). Adding shareExpiresAt + expiry UI would mirror the dream-share feature for parity.
+   602→- The echo entry from Atlas co-occurrence chips silently no-ops when fewer than 2 dreams contain BOTH motifs (falls back to opening the single dream). A toast explaining the fallback would be kinder.
+   603→- The public story endpoint returns ALL turns; a very long session (15+ turns) makes a long page. A turn-limit + "read the rest" pagination could be added if long sessions become common.
+   604→- Next-phase ideas, in priority order: (1) story share expiry windows for parity with dream shares; (2) lexicon word "ignore" affordance + locale stopword sets (carried from r9); (3) echo from the journal (select-two-dreams affordance); (4) session-story OG metadata (title/description) for link previews; (5) palette search over arcade session scenes ("search everything" surface).
+   605→- Screenshots this round in /home/z/my-project/download/: qa-r10-landing.png, qa-r10-detail.png, qa-r10-session.png, qa-r10-palette-via.png, qa-r10-session-ended.png, qa-r10-session-shared.png, qa-r10-story.png, qa-r10-echo.png, qa-r10-print-test.pdf, qa-r10-mobile-detail-fixed.png, qa-r10-echo-final.png, qa-r10-story-final.png, qa-r10-story-progress.png, qa-r10-palette-final.png, qa-r10-echo-folded.png.
+   606→- QA credentials: lucia@dreamweaver.test / qa-test-123. Live demo share links: dream reflection 924dce21c4998dad9a1e848caec4df20b3e80cc6ec78a25f (#/shared/...), session story 79666a198b58b6d1c4c2aac5beebeeee2ae29b0b92b22491 (#/story/... — confront mode, 4 turns, ends unresolved). Test echo: #/echo/cmtd52dog0001l6hdqt8yipzc/cmtd41ufx001ll64iymhzh16s (Museum of Hidden Faces vs multiplying stairs). Test dream: cmtd52dog0001l6hdqt8yipzc ("Museum of Hidden Faces"). NOTE: the confront test session cmtd39tzl0012l64i0d9xswep was PATCH-ended this round to test story sharing (was active in r9).
+   607→

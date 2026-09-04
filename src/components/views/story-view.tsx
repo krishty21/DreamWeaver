@@ -30,7 +30,18 @@ import type { EndingType } from "@/lib/types";
 
 async function fetchStory(token: string) {
   const res = await fetch(`/api/shared/session/${token}`);
-  if (!res.ok) throw new Error("not found");
+  if (!res.ok) {
+    // r11 — distinguish "expired" from plain 404 (both are 404 http, but the
+    // body carries an error code), same as the shared dream view.
+    let code = "not found";
+    try {
+      const body = await res.json();
+      if (body?.error === "expired") code = "expired";
+    } catch {
+      /* keep default */
+    }
+    throw new Error(code);
+  }
   return res.json();
 }
 
@@ -59,6 +70,11 @@ export function StoryView() {
     queryFn: () => fetchStory(token!),
     enabled: !!token,
     retry: false,
+    // Public share links must be FRESH on every mount: a dreamer can revoke or
+    // let the window expire at any moment, and a cached copy would keep showing
+    // the story after it closed (the global 30s staleTime is wrong here).
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   // r10 — reading progress: a hairline rose line at the very top of the page
@@ -108,13 +124,20 @@ export function StoryView() {
       ) : error || !data?.story ? (
         <div className="flex-1 flex items-center justify-center px-6 py-28">
           <div className="text-center max-w-md">
-            <MoonStar className="h-8 w-8 mx-auto text-muted-foreground" strokeWidth={1.4} />
+            {error?.message === "expired" ? (
+              <Hourglass className="h-8 w-8 mx-auto text-muted-foreground" strokeWidth={1.4} />
+            ) : (
+              <MoonStar className="h-8 w-8 mx-auto text-muted-foreground" strokeWidth={1.4} />
+            )}
             <h1 className="mt-5 font-display text-4xl tracking-display balance">
-              This story is no longer being told.
+              {error?.message === "expired"
+                ? "This window has closed."
+                : "This story is no longer being told."}
             </h1>
             <p className="mt-3 text-sm text-muted-foreground pretty">
-              The dreamer may have withdrawn the link, or it never existed. The
-              night it came from stays private, wherever it is.
+              {error?.message === "expired"
+                ? "The dreamer set this story to expire, and its time has passed. The re-entry returns to private memory."
+                : "The dreamer may have withdrawn the link, or it never existed. The night it came from stays private, wherever it is."}
             </p>
             <button
               onClick={() => navigate("landing")}
@@ -176,6 +199,8 @@ function StoryBody({ story }: { story: any }) {
               shared {fmtDay(story.sharedAt)}
             </span>
           )}
+          {/* r11 — if the dreamer armed an expiry, readers deserve to see the window */}
+          {story.expiresAt && <StoryExpiryChip expiresAt={story.expiresAt} />}
         </div>
       </motion.div>
 
@@ -325,6 +350,28 @@ function CopyStoryLink() {
       )}
       {copied ? "copied" : "copy link"}
     </button>
+  );
+}
+
+// r11 — quiet chip telling readers when the link closes (day precision).
+function StoryExpiryChip({ expiresAt }: { expiresAt: string }) {
+  let d: Date | null = null;
+  try {
+    d = new Date(expiresAt);
+    if (Number.isNaN(d.getTime())) d = null;
+  } catch {
+    d = null;
+  }
+  if (!d) return null;
+  const closes = d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return (
+    <span
+      className="story-expiry-chip font-data tracking-caps uppercase inline-flex items-center gap-1"
+      title="The dreamer chose a window for this share"
+    >
+      <Hourglass className="h-3 w-3" strokeWidth={1.6} aria-hidden="true" />
+      closes {closes}
+    </span>
   );
 }
 

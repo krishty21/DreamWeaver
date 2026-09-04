@@ -1,9 +1,10 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
-import { Map, Loader2, Sparkles, TrendingUp, TrendingDown, Minus, Feather } from "lucide-react";
+import { Map, Loader2, Sparkles, TrendingUp, TrendingDown, Minus, Feather, X, RotateCcw } from "lucide-react";
 import { motion } from "framer-motion";
+import { useToast } from "@/hooks/use-toast";
 import type { PatternReport, LexiconWord } from "@/lib/types";
 import { DreamCalendar } from "@/components/views/dream-calendar";
 
@@ -14,8 +15,40 @@ async function fetchPatterns() {
 
 export function PatternsView() {
   const navigate = useApp((s) => s.navigate);
+  const qc = useQueryClient();
+  const { toast } = useToast();
   const { data, isLoading } = useQuery({ queryKey: ["patterns"], queryFn: fetchPatterns });
   const report = data?.report as PatternReport | undefined;
+
+  // r11 — mute / restore a lexicon word. The list itself is recomputed
+  // server-side on /api/patterns (muted words are excluded BEFORE ranking, so
+  // the next recurring word surfaces in the muted word's place).
+  const ignoreMut = useMutation({
+    mutationFn: async ({ word, restore }: { word: string; restore?: boolean }) => {
+      const res = await fetch("/api/patterns/lexicon", {
+        method: restore ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ word }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || "The lexicon could not be updated.");
+      }
+      return { word, restore };
+    },
+    onSuccess: ({ word, restore }) => {
+      qc.invalidateQueries({ queryKey: ["patterns"] });
+      toast({
+        title: restore ? "Word restored" : "Word muted",
+        description: restore
+          ? `“${word}” rejoins the cloud on the next breath.`
+          : `“${word}” steps aside — the next recurring word takes its place.`,
+      });
+    },
+    onError: (e: any) => {
+      toast({ title: "Lexicon update failed", description: e.message, variant: "destructive" });
+    },
+  });
 
   if (isLoading) {
     return (
@@ -186,8 +219,10 @@ export function PatternsView() {
 
       {/* r9 — Dream lexicon: the words your dreaming mind reaches for most.
           Computed app-side from raw texts (never the model). Clicking a word
-          jumps to the journal pre-filtered to that word. */}
-      {(report.lexicon ?? []).length > 0 && (
+          jumps to the journal pre-filtered to that word.
+          r11 — words can be MUTED (× on hover); the cloud recomposes without
+          them and the muted set is restorable below. */}
+      {((report.lexicon ?? []).length > 0 || (report.lexiconIgnored ?? []).length > 0) && (
         <motion.section
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
@@ -200,14 +235,42 @@ export function PatternsView() {
               <h2 className="font-display text-2xl sm:text-3xl tracking-tight">The lexicon of your dreams</h2>
               <p className="mt-1 text-[11px] text-muted-foreground italic">
                 The words your memory reaches for, counted across every raw dream — not chosen by the model.
-                Tap a word to find every dream it appears in.
+                Tap a word to find every dream it appears in; hover a word and press × to mute the noise.
               </p>
             </div>
             <span className="hidden sm:inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.05]">
               <Feather className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
             </span>
           </div>
-          <LexiconCloud words={report.lexicon} />
+          <LexiconCloud
+            words={report.lexicon ?? []}
+            busy={ignoreMut.isPending}
+            onIgnore={(word) => ignoreMut.mutate({ word })}
+          />
+          {(report.lexiconIgnored ?? []).length > 0 && (
+            <div className="mt-5 pt-4 border-t border-border/60">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[11px] text-muted-foreground italic">Muted from the cloud:</span>
+                {(report.lexiconIgnored ?? []).map((w) => (
+                  <button
+                    key={w}
+                    type="button"
+                    className="lexicon-restore-chip"
+                    disabled={ignoreMut.isPending}
+                    onClick={() => ignoreMut.mutate({ word: w, restore: true })}
+                    aria-label={`Restore the word ${w} to the lexicon`}
+                  >
+                    <RotateCcw className="h-3 w-3" strokeWidth={1.7} aria-hidden="true" />
+                    {w}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1.5 text-[11px] text-muted-foreground/70 pretty">
+                Muted words are skipped while the cloud is composed — the next recurring word takes their
+                place. Nothing is deleted from your dreams; the muting is a lens, not an eraser.
+              </p>
+            </div>
+          )}
         </motion.section>
       )}
     </div>
@@ -217,10 +280,26 @@ export function PatternsView() {
 // r9 — typographic word cloud. Sizes are scaled between the most and least
 // frequent entries; words fade in with a small stagger so the cloud "surfaces"
 // like a memory rather than rendering all at once.
-function LexiconCloud({ words }: { words: LexiconWord[] }) {
+// r11 — each word carries a mute (×) affordance that appears on hover/focus;
+// muting asks the server to skip the word and recompose the cloud.
+function LexiconCloud({
+  words,
+  busy,
+  onIgnore,
+}: {
+  words: LexiconWord[];
+  busy: boolean;
+  onIgnore: (word: string) => void;
+}) {
   const navigate = useApp((s) => s.navigate);
   const setJournalQuery = useApp((s) => s.setJournalQuery);
-  if (words.length === 0) return null;
+  if (words.length === 0) {
+    return (
+      <p className="mt-5 text-sm text-muted-foreground italic">
+        Every recurring word is muted — restore one below, or record another night.
+      </p>
+    );
+  }
   const maxDreams = words[0].dreamCount;
   const minDreams = words[words.length - 1].dreamCount;
   const span = Math.max(1, maxDreams - minDreams);
@@ -231,24 +310,38 @@ function LexiconCloud({ words }: { words: LexiconWord[] }) {
         const size = 15 + t * 19; // 15px .. 34px
         const italic = i % 5 === 2; // every 5th word italic — editorial rhythm
         return (
-          <motion.button
-            key={w.word}
-            type="button"
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, delay: Math.min(i * 0.035, 0.8) }}
-            className="lexicon-word"
-            style={{ fontSize: `${size.toFixed(1)}px`, fontStyle: italic ? "italic" : "normal", fontWeight: t > 0.6 ? 600 : 400 }}
-            title={`“${w.word}” appears in ${w.dreamCount} dream${w.dreamCount === 1 ? "" : "s"} (${w.count} times)`}
-            aria-label={`Find dreams containing the word ${w.word} — appears in ${w.dreamCount} dreams`}
-            onClick={() => {
-              setJournalQuery(w.word);
-              navigate("journal");
-            }}
-          >
-            {w.word}
-            <span className="lexicon-count" aria-hidden="true">×{w.dreamCount}</span>
-          </motion.button>
+          <span key={w.word} className="lexicon-cell">
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4, delay: Math.min(i * 0.035, 0.8) }}
+              className="lexicon-word"
+              style={{ fontSize: `${size.toFixed(1)}px`, fontStyle: italic ? "italic" : "normal", fontWeight: t > 0.6 ? 600 : 400 }}
+              title={`“${w.word}” appears in ${w.dreamCount} dream${w.dreamCount === 1 ? "" : "s"} (${w.count} times)`}
+              aria-label={`Find dreams containing the word ${w.word} — appears in ${w.dreamCount} dreams`}
+              onClick={() => {
+                setJournalQuery(w.word);
+                navigate("journal");
+              }}
+            >
+              {w.word}
+              <span className="lexicon-count" aria-hidden="true">×{w.dreamCount}</span>
+            </motion.button>
+            <button
+              type="button"
+              className="lexicon-x"
+              disabled={busy}
+              onClick={(e) => {
+                e.stopPropagation();
+                onIgnore(w.word);
+              }}
+              aria-label={`Mute the word ${w.word} from the lexicon`}
+              title={`Mute “${w.word}” — hide it from the cloud`}
+            >
+              <X className="h-2.5 w-2.5" strokeWidth={2.4} />
+            </button>
+          </span>
         );
       })}
       <span className="sr-only">End of lexicon.</span>

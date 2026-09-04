@@ -1210,3 +1210,168 @@ svg .spark-line-shadow {
 
 
 /* r10 watch-bust */
+
+/* ============================================================
+   r11 — Lexicon mute affordance + restore chips (Patterns view)
+   Each cloud word is wrapped in a .lexicon-cell; the small ×
+   fades in on hover/focus and mutes the word (the server
+   recomposes the cloud without it). Muted words rest below in
+   strikethrough-serif restore chips.
+   ============================================================ */
+.lexicon-cell {
+  position: relative;
+  display: inline-flex;
+  align-items: baseline;
+}
+.lexicon-x {
+  position: absolute;
+  top: -0.55rem;
+  right: -0.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1rem;
+  width: 1rem;
+  border-radius: 9999px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--paper, #f2f1ef) 92%, var(--mauve));
+  border: 1px solid color-mix(in srgb, var(--mauve) 30%, transparent);
+  cursor: pointer;
+  opacity: 0;
+  transform: scale(0.8);
+  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    background 160ms ease, border-color 160ms ease, color 160ms ease;
+  z-index: 1;
+}
+.lexicon-cell:hover .lexicon-x,
+.lexicon-x:focus-visible {
+  opacity: 1;
+  transform: scale(1);
+}
+.lexicon-x:hover {
+  color: var(--ink, #413f3d);
+  background: color-mix(in srgb, var(--rose) 30%, transparent);
+  border-color: color-mix(in srgb, var(--rose) 65%, transparent);
+}
+.lexicon-x:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.lexicon-x:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.lexicon-restore-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-size: 0.95rem;
+  font-style: italic;
+  color: var(--muted-foreground);
+  padding: 0.15rem 0.6rem 0.2rem;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--mauve) 10%, transparent);
+  border: 1px dashed color-mix(in srgb, var(--mauve) 35%, transparent);
+  transition: color 180ms ease, border-color 180ms ease, background 180ms ease, transform 180ms ease;
+  cursor: pointer;
+}
+.lexicon-restore-chip:hover {
+  color: var(--foreground);
+  border-color: color-mix(in srgb, var(--rose) 60%, transparent);
+  background: color-mix(in srgb, var(--rose) 14%, transparent);
+  transform: translateY(-1px);
+}
+.lexicon-restore-chip:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.lexicon-restore-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* ============================================================
+   r11 — Journal compare mode (dream echo entry)
+   Compare-two-nights selection: a rose ring + spring check
+   badge on chosen cards, and a floating pill bar that tracks
+   the two chosen nights above the footer.
+   ============================================================ */
+.echo-card-selected {
+  border-color: color-mix(in srgb, var(--rose) 65%, transparent) !important;
+  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--rose) 45%, transparent),
+    0 14px 30px -18px color-mix(in srgb, var(--rose) 85%, transparent) !important;
+  background: color-mix(in srgb, var(--rose) 6%, transparent) !important;
+}
+.echo-check {
+  position: absolute;
+  top: 0.65rem;
+  right: 0.65rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.35rem;
+  width: 1.35rem;
+  border-radius: 9999px;
+  color: var(--paper, #f2f1ef);
+  background: linear-gradient(135deg, var(--rose), color-mix(in srgb, var(--rose) 60%, var(--mauve)));
+  box-shadow: 0 4px 10px -3px color-mix(in srgb, var(--rose) 80%, transparent);
+  z-index: 2;
+}
+.journal-echo-bar {
+  background: color-mix(in srgb, var(--paper, #f2f1ef) 96%, var(--mauve));
+  border: 1px solid color-mix(in srgb, var(--mauve) 28%, transparent);
+  box-shadow: 0 18px 40px -18px rgba(65, 63, 61, 0.4), 0 2px 8px -4px rgba(65, 63, 61, 0.18);
+  backdrop-filter: blur(6px);
+}
+.echo-sel-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-data), ui-monospace, monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.04em;
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--rose) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--rose) 42%, transparent);
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  max-width: 100%;
+}
+.echo-sel-idx {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1rem;
+  width: 1rem;
+  font-size: 0.55rem;
+  border-radius: 9999px;
+  color: var(--paper, #f2f1ef);
+  background: var(--ink, #413f3d);
+}
+
+/* ============================================================
+   r11 — Story share expiry window (session view + public story)
+   The compact 7/30/forever segmented control on the ended
+   session card, and the quiet "closes …" chip readers see.
+   ============================================================ */
+.story-window-group {
+  background: color-mix(in srgb, var(--paper, #f2f1ef) 94%, var(--mauve));
+}
+.story-window-group button:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.story-expiry-chip {
+  color: var(--ink, #413f3d);
+  background: color-mix(in srgb, var(--mauve) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mauve) 34%, transparent);
+  padding: 0.15rem 0.55rem;
+  border-radius: 9999px;
+}
+
+/* r11 marker rule — verifies this stylesheet chunk reached the compiled CSS
+   (Turbopack staleness guard; see worklog r8/r10 notes). */
+.dw-r11-css-live::after {
+  content: "r11";
+}

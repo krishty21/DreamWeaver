@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Loader2, Send, Compass, RotateCcw, Brain, Sparkles, Moon, Share2, Copy, Check, Link2Off, BookOpenText } from "lucide-react";
+import { ArrowLeft, Loader2, Send, Compass, RotateCcw, Brain, Sparkles, Moon, Share2, Copy, Check, Link2Off, BookOpenText, Hourglass } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -195,14 +195,16 @@ export function ArcadeSessionView() {
       </div>
 
       {/* state meters — always visible */}
-      <div className="surface p-4 mb-6">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="surface p-4 sm:p-5 mb-6">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-5">
           <Meter label="Fear" value={state.fear} tone="tense" />
           <Meter label="Lucidity" value={state.lucidity} tone="lucid" />
           <Meter label="Stability" value={state.stability} tone="neutral" />
           <Meter label="Agency" value={state.agency} tone="lucid" />
         </div>
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        {/* hairline + breathing room so the meta line reads as a caption,
+            not a crammed fifth meter row */}
+        <div className="mt-4 pt-3 border-t border-border/50 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
           <span>
             Turn <span className="font-data">{state.turn}</span> · phase {state.phase}
             {state.confrontMotif && (
@@ -464,6 +466,14 @@ export function ArcadeSessionView() {
 // link to the session's narrative (#/story/<token>) that works signed-out.
 // The share never exposes the dream's raw text — only the story of the
 // re-entry: mode, every turn (action + scene), the ending, the final meters.
+// r11 — expiry windows (7 / 30 days / forever), mirroring the dream share
+// panel. Setting a window re-arms it from now; "forever" clears it.
+const STORY_WINDOWS = [
+  { v: "7", label: "7 days" },
+  { v: "30", label: "30 days" },
+  { v: "never", label: "Forever" },
+] as const;
+
 function StoryShare({ session }: { session: any }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -475,11 +485,17 @@ function StoryShare({ session }: { session: any }) {
   const url =
     token && typeof window !== "undefined" ? `${window.location.origin}/#/story/${token}` : "";
 
-  async function onShare() {
+  async function onShare(opts?: { expiresInDays?: number | null }) {
     if (busy) return;
     setBusy(true);
     try {
-      const res = await fetch(`/api/arcade/sessions/${session.id}/share`, { method: "POST" });
+      const res = await fetch(`/api/arcade/sessions/${session.id}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          opts?.expiresInDays !== undefined ? { expiresInDays: opts.expiresInDays } : {}
+        ),
+      });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "The story could not be shared.");
       await qc.invalidateQueries({ queryKey: ["session", session.id] });
@@ -489,9 +505,13 @@ function StoryShare({ session }: { session: any }) {
       if (link && navigator.clipboard) {
         navigator.clipboard.writeText(link).catch(() => {});
       }
+      const windowNote =
+        opts?.expiresInDays === undefined || opts?.expiresInDays === null
+          ? ""
+          : ` The link will close in ${opts.expiresInDays} day${opts.expiresInDays === 1 ? "" : "s"}.`;
       toast({
         title: "Story shared",
-        description: "A read-only link was copied to your clipboard. The dream's raw memory stays private.",
+        description: `A read-only link was copied to your clipboard. The dream's raw memory stays private.${windowNote}`,
       });
     } catch (e: any) {
       toast({ title: "Sharing failed", description: e.message, variant: "destructive" });
@@ -535,7 +555,7 @@ function StoryShare({ session }: { session: any }) {
         <Button
           variant="outline"
           size="sm"
-          onClick={onShare}
+          onClick={() => onShare()}
           disabled={busy}
           className="h-9 story-share-btn"
           aria-label="Share this session as a read-only story"
@@ -545,11 +565,31 @@ function StoryShare({ session }: { session: any }) {
         </Button>
         <p className="mt-2 text-[11px] text-muted-foreground pretty max-w-md mx-auto">
           A read-only page with the whole re-entry — your choices, the scenes, the ending. The
-          recorded dream itself is never included.
+          recorded dream itself is never included. You choose how long the link stays open.
         </p>
       </div>
     );
   }
+
+  // r11 — expiry status, mirroring the dream share panel's semantics.
+  const expiresAt: string | null = session.shareExpiresAt ?? null;
+  const expiryDate = expiresAt ? new Date(expiresAt) : null;
+  const isExpired = !!expiryDate && expiryDate.getTime() < Date.now();
+  const daysLeft = expiryDate
+    ? Math.ceil((expiryDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+    : null;
+  const expiryLabel = !expiryDate
+    ? "open forever"
+    : isExpired
+    ? "expired — re-open below"
+    : daysLeft !== null && daysLeft <= 1
+    ? "last day"
+    : `closes in ${daysLeft} day${daysLeft === 1 ? "" : "s"}`;
+  const currentWindow: "never" | "7" | "30" =
+    !expiryDate ? "never" : isExpired ? "7" : (daysLeft ?? 0) > 22 ? "30" : "7";
+  const sharedLabel = session.sharedAt
+    ? new Date(session.sharedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })
+    : "recently";
 
   return (
     <div className="mt-5 story-share-row">
@@ -584,9 +624,44 @@ function StoryShare({ session }: { session: any }) {
           withdraw
         </button>
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">
-        Shared {session.sharedAt ? new Date(session.sharedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "recently"} · read-only · the recorded dream stays private
-      </p>
+      {/* r11 — expiry window segmented control + status line */}
+      <div className="mt-3 flex flex-col items-center gap-1.5">
+        <div
+          className="inline-flex items-center rounded-full border border-border bg-card p-0.5 story-window-group"
+          role="group"
+          aria-label="How long the story link stays open"
+        >
+          {STORY_WINDOWS.map((opt) => {
+            const active = currentWindow === opt.v;
+            return (
+              <button
+                key={opt.v}
+                type="button"
+                disabled={busy}
+                aria-pressed={active}
+                onClick={() =>
+                  onShare({ expiresInDays: opt.v === "never" ? null : Number(opt.v) })
+                }
+                className={`px-3 h-7 rounded-full text-[11px] transition focus-ring disabled:opacity-50 ${
+                  active
+                    ? "bg-foreground text-background shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <p className={`text-[11px] text-muted-foreground ${isExpired ? "text-destructive/90" : ""}`}>
+          Shared {sharedLabel} · read-only ·{" "}
+          <span className="inline-flex items-center gap-0.5">
+            <Hourglass className="h-3 w-3" strokeWidth={1.7} aria-hidden="true" />
+            {expiryLabel}
+          </span>{" "}
+          · the recorded dream stays private
+        </p>
+      </div>
     </div>
   );
 }

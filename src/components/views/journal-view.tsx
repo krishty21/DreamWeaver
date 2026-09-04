@@ -15,8 +15,11 @@ import {
   X,
   CalendarDays,
   MoonStar,
+  GitCompareArrows,
+  Check,
+  Repeat,
 } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { buildJournalMarkdown, downloadMarkdown } from "@/lib/journal-export";
 import { useToast } from "@/hooks/use-toast";
@@ -74,6 +77,45 @@ export function JournalView() {
   const [query, setQuery] = useState("");
   const [moodFilter, setMoodFilter] = useState<Mood | "all">("all");
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // r11 — DREAM ECHO FROM THE JOURNAL: pick any two recorded nights (not just
+  // motif co-occurrences from the Atlas) and read them side by side. While
+  // echoMode is on, dream cards become selectable; a floating bar tracks the
+  // two chosen nights. Dreams without a reflection can't be compared (the
+  // echo's thread + drift are computed from the analysis).
+  const [echoMode, setEchoMode] = useState(false);
+  const [echoSel, setEchoSel] = useState<string[]>([]);
+
+  function toggleEchoSel(id: string) {
+    setEchoSel((prev) =>
+      prev.includes(id)
+        ? prev.filter((x) => x !== id)
+        : prev.length >= 2
+        ? [prev[1], id] // full: drop the oldest, keep the newest pick
+        : [...prev, id]
+    );
+  }
+
+  function exitEchoMode() {
+    setEchoMode(false);
+    setEchoSel([]);
+  }
+
+  function compareEcho() {
+    if (echoSel.length !== 2) return;
+    navigate("echo", { dreamId: echoSel[0], echoId: echoSel[1] });
+    exitEchoMode();
+  }
+
+  // Esc leaves compare mode — matches the palette/dialog escape convention.
+  useEffect(() => {
+    if (!echoMode) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") exitEchoMode();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [echoMode]);
 
   const dreams: any[] = data?.dreams ?? [];
 
@@ -184,8 +226,14 @@ export function JournalView() {
     : null;
 
   return (
-    <div className="mx-auto w-full max-w-5xl px-5 sm:px-8 py-10 sm:py-14">
-      <div className="flex items-center justify-between gap-3 mb-8">
+    <div
+      className={`mx-auto w-full max-w-5xl px-5 sm:px-8 py-10 sm:py-14 ${
+        echoMode ? "pb-28" : ""
+      }`}
+    >
+      {/* pb-28 while comparing: keeps the last row of cards scrollable clear of
+          the floating echo bar (which sits ~bottom-5 above the viewport edge). */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
         <div>
           <div className="page-rule mb-2" aria-hidden="true" />
           <div className="text-xs tracking-caps uppercase text-muted-foreground mb-2">
@@ -195,7 +243,29 @@ export function JournalView() {
             Your recorded dreams
           </h1>
         </div>
-        <div className="flex items-center gap-2">
+        {/* r11 — with the Compare affordance added, the header no longer fits
+            beside the title on small screens: the actions drop below the title
+            (right-aligned) and return to the header row from sm up. */}
+        <div className="flex items-center gap-2 self-end sm:self-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              if (echoMode) exitEchoMode();
+              else setEchoMode(true);
+            }}
+            disabled={dreams.length < 2}
+            aria-pressed={echoMode}
+            className={`h-9 shadow-sm transition focus-ring ${
+              echoMode
+                ? "bg-foreground text-background border-foreground hover:opacity-90 hover:bg-foreground"
+                : "border-foreground/25 bg-card hover:bg-accent hover:border-foreground/40"
+            }`}
+            aria-label={echoMode ? "Exit compare-two-dreams mode" : "Compare two dreams side by side"}
+          >
+            <GitCompareArrows className="h-4 w-4" strokeWidth={1.6} />
+            <span className="sr-only sm:not-sr-only sm:ml-1.5">{echoMode ? "Choosing…" : "Compare"}</span>
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -318,6 +388,28 @@ export function JournalView() {
         </motion.div>
       )}
 
+      {/* ——— echo selection hint ——— */}
+      <AnimatePresence>
+        {echoMode && dreams.length >= 2 && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: 0.25 }}
+            className="mb-6 flex items-center gap-3 px-4 py-3 rounded-xl border border-dashed border-foreground/25 bg-foreground/[0.02]"
+            role="status"
+            aria-live="polite"
+          >
+            <Repeat className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.6} aria-hidden="true" />
+            <p className="text-xs text-muted-foreground pretty">
+              Dream echo — choose <span className="text-foreground font-medium">two nights</span> below. The
+              shared thread between them will open side by side: motifs, feelings, and the drift from one
+              night to the other. Press Esc to stop choosing.
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* ——— results meta ——— */}
       {dreams.length > 0 && filtering && (
         <div className="mb-6 text-xs text-muted-foreground/80 pretty" aria-live="polite">
@@ -349,16 +441,31 @@ export function JournalView() {
                 <span className="font-data text-xs text-muted-foreground">{items.length}</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {items.map((d, i) => (
-                  <DreamCard
-                    key={d.id}
-                    dream={d}
-                    index={i}
-                    query={query}
-                    onOpen={() => navigate("dream", { dreamId: d.id })}
-                    onArcade={() => navigate("arcade", { dreamId: d.id })}
-                  />
-                ))}
+                {items.map((d, i) => {
+                  const selectable = !!d.analysis;
+                  const selection: "off" | "available" | "selected" | "unavailable" = !echoMode
+                    ? "off"
+                    : echoSel.includes(d.id)
+                    ? "selected"
+                    : selectable
+                    ? "available"
+                    : "unavailable";
+                  return (
+                    <DreamCard
+                      key={d.id}
+                      dream={d}
+                      index={i}
+                      query={query}
+                      selection={selection}
+                      onOpen={
+                        echoMode
+                          ? () => selectable && toggleEchoSel(d.id)
+                          : () => navigate("dream", { dreamId: d.id })
+                      }
+                      onArcade={() => navigate("arcade", { dreamId: d.id })}
+                    />
+                  );
+                })}
               </div>
             </section>
           ))}
@@ -369,7 +476,84 @@ export function JournalView() {
         <MoonStar className="inline h-3.5 w-3.5 -translate-y-px mr-1" strokeWidth={1.5} aria-hidden="true" />
         Every search runs against your words and your reflections — never anyone else&rsquo;s.
       </p>
+
+      {/* r11 — floating echo bar: tracks the two chosen nights (fixed above footer) */}
+      <EchoBar
+        echoMode={echoMode}
+        echoSel={echoSel}
+        dreams={dreams}
+        onCompare={compareEcho}
+        onCancel={exitEchoMode}
+      />
     </div>
+  );
+}
+
+// r11 — the floating compare bar. Springs up from the bottom edge when the
+// journal enters compare mode; the Compare button lights once two nights are
+// chosen. Selection state lives in the parent; this is presentational.
+function EchoBar({
+  echoMode,
+  echoSel,
+  dreams,
+  onCompare,
+  onCancel,
+}: {
+  echoMode: boolean;
+  echoSel: string[];
+  dreams: any[];
+  onCompare: () => void;
+  onCancel: () => void;
+}) {
+  const titles = echoSel.map((id) => dreams.find((d) => d.id === id)?.title ?? "A dream");
+  return (
+    <AnimatePresence>
+      {echoMode && (
+        <motion.div
+          initial={{ opacity: 0, y: 28 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 28 }}
+          transition={{ type: "spring", stiffness: 340, damping: 30 }}
+          className="fixed bottom-5 sm:bottom-7 inset-x-0 z-40 flex justify-center px-4 pointer-events-none"
+        >
+          <div
+            className="journal-echo-bar pointer-events-auto flex items-center gap-2.5 sm:gap-3 max-w-full flex-wrap justify-center px-4 py-2.5 rounded-3xl sm:rounded-full"
+            role="region"
+            aria-label="Dream echo selection"
+          >
+            <Repeat className="h-4 w-4 shrink-0 text-muted-foreground" strokeWidth={1.6} aria-hidden="true" />
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              {echoSel.length === 0
+                ? "choose the first night"
+                : echoSel.length === 1
+                ? "now choose the second"
+                : "two nights chosen"}
+            </span>
+            {titles.map((t, i) => (
+              <span key={echoSel[i]} className="echo-sel-chip" title={t}>
+                <span className="echo-sel-idx" aria-hidden="true">{i + 1}</span>
+                <span className="truncate max-w-[120px] sm:max-w-[160px]">{t}</span>
+              </span>
+            ))}
+            <button
+              onClick={onCompare}
+              disabled={echoSel.length !== 2}
+              className="h-8 px-4 rounded-full text-xs bg-foreground text-background hover:opacity-90 transition disabled:opacity-40 focus-ring"
+              aria-label="Open the dream echo comparing the two chosen nights"
+            >
+              Compare
+            </button>
+            <button
+              onClick={onCancel}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition focus-ring"
+              aria-label="Stop choosing dreams"
+            >
+              <X className="h-3.5 w-3.5" strokeWidth={1.8} />
+            </button>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 }
 
@@ -471,12 +655,14 @@ function DreamCard({
   dream,
   index,
   query,
+  selection,
   onOpen,
   onArcade,
 }: {
   dream: any;
   index: number;
   query: string;
+  selection: "off" | "available" | "selected" | "unavailable";
   onOpen: () => void;
   onArcade: () => void;
 }) {
@@ -485,6 +671,7 @@ function DreamCard({
   const mood = dream.mood || "neutral";
   const moodColor = MOOD_COLORS[mood as Mood] ?? MOOD_COLORS.neutral;
   const q = query.trim();
+  const choosing = selection !== "off";
 
   return (
     <motion.article
@@ -492,15 +679,41 @@ function DreamCard({
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: Math.min(index * 0.04, 0.4) }}
       whileHover={{ y: -4 }}
-      className="surface p-5 flex flex-col cursor-pointer lift"
+      className={`surface p-5 flex flex-col lift relative ${
+        selection === "selected"
+          ? "echo-card-selected"
+          : selection === "unavailable"
+          ? "opacity-55"
+          : "cursor-pointer"
+      }`}
       onClick={onOpen}
+      aria-pressed={selection === "selected" ? true : undefined}
+      aria-disabled={selection === "unavailable" ? true : undefined}
     >
+      {/* r11 — selection check badge (compare mode) */}
+      <AnimatePresence>
+        {selection === "selected" && (
+          <motion.span
+            initial={{ scale: 0.4, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.4, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 500, damping: 26 }}
+            className="echo-check"
+            aria-hidden="true"
+          >
+            <Check className="h-3.5 w-3.5" strokeWidth={2.4} />
+          </motion.span>
+        )}
+      </AnimatePresence>
       <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
         <span className="inline-flex items-center gap-1.5">
           <span className="mood-dot" style={{ background: moodColor }} aria-hidden="true" />
           {new Date(dream.createdAt).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}
         </span>
-        {mood !== "neutral" && <span className="chip">{mood}</span>}
+        {mood !== "neutral" && !choosing && <span className="chip">{mood}</span>}
+        {selection === "unavailable" && (
+          <span className="text-[10px] italic">no reflection yet</span>
+        )}
       </div>
       <h3 className="font-display text-2xl leading-snug tracking-tight balance">
         <Highlight text={dream.title || "Untitled dream"} query={q} />
@@ -520,26 +733,38 @@ function DreamCard({
         </div>
       )}
       <div className="mt-auto pt-4 flex items-center justify-between">
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onOpen();
-          }}
-          className="group inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border"
-        >
-          Read reflection
-          <ArrowRight className="h-3 w-3 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition" strokeWidth={1.6} aria-hidden="true" />
-        </button>
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onArcade();
-          }}
-          className="group inline-flex items-center gap-1.5 text-xs text-foreground hover:opacity-70 transition"
-        >
-          <Compass className="h-3.5 w-3.5 group-hover:rotate-12 transition" strokeWidth={1.6} aria-hidden="true" />
-          Re-enter
-        </button>
+        {choosing ? (
+          <span className="text-xs text-muted-foreground italic pretty">
+            {selection === "selected"
+              ? "chosen — click again to release"
+              : selection === "unavailable"
+              ? "this night needs a reflection first"
+              : "choose this night"}
+          </span>
+        ) : (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpen();
+            }}
+            className="group inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border"
+          >
+            Read reflection
+            <ArrowRight className="h-3 w-3 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition" strokeWidth={1.6} aria-hidden="true" />
+          </button>
+        )}
+        {!choosing && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onArcade();
+            }}
+            className="group inline-flex items-center gap-1.5 text-xs text-foreground hover:opacity-70 transition"
+          >
+            <Compass className="h-3.5 w-3.5 group-hover:rotate-12 transition" strokeWidth={1.6} aria-hidden="true" />
+            Re-enter
+          </button>
+        )}
       </div>
     </motion.article>
   );

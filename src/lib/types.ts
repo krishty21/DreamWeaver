@@ -182,4 +182,7 @@ export type PatternReport = {
   timeline: TimelinePoint[];
   // r9 — word-frequency across raw dream texts (Patterns view lexicon cloud)
   lexicon: LexiconWord[];
+  // r11 — words the dreamer muted from the lexicon cloud, newest first.
+  // Carried on the report so the restore affordance needs no extra fetch.
+  lexiconIgnored?: string[];
 };

@@ -58,6 +58,10 @@ export function SharedDreamView() {
     queryFn: () => fetchShared(token!),
     enabled: !!token,
     retry: false,
+    // Same as the story view: revocation/expiry must be reflected on the very
+    // next mount — never serve a cached copy of a public share.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   return (

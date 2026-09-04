@@ -25,7 +25,7 @@ const STOPWORDS = new Set([
   "a", "an", "as", "at", "by", "he", "if", "in", "is", "it", "no", "of", "on", "or", "so", "to", "do", "did", "does", "done", "be", "am", "are", "can", "will", "who", "how", "why", "all", "any", "both", "each", "few", "more", "most", "other", "such", "own", "same", "too", "once", "says", "said", "saw", "see", "seen", "eyes", "eye", "around", "behind", "beside", "next",
 ]);
 
-function computeLexicon(rawTexts: { text: string }[]): LexiconWord[] {
+function computeLexicon(rawTexts: { text: string }[], ignored: Set<string> = new Set()): LexiconWord[] {
   const counts = new Map<string, { count: number; dreams: Set<string> }>();
   let dreamIdx = 0;
   for (const { text } of rawTexts) {
@@ -34,6 +34,9 @@ function computeLexicon(rawTexts: { text: string }[]): LexiconWord[] {
     for (const w of words) {
       if (w.length < 4 || w.length > 16) continue;
       if (STOPWORDS.has(w)) continue;
+      // r11 — the dreamer's muted words are excluded BEFORE ranking, so the
+      // next most-recurring word surfaces in the muted word's place.
+      if (ignored.has(w)) continue;
       const e = counts.get(w) ?? { count: 0, dreams: new Set<string>() };
       e.count += 1;
       e.dreams.add(id);
@@ -59,6 +62,14 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
     select: { id: true, createdAt: true, status: true, ending: true, mode: true, dreamId: true },
     orderBy: { createdAt: "asc" },
   });
+
+  // r11 — the dreamer's muted lexicon words (ownership enforced by userId).
+  const ignoredRows = await db.lexiconIgnore.findMany({
+    where: { userId },
+    orderBy: { createdAt: "desc" },
+    select: { word: true },
+  });
+  const lexiconIgnored = ignoredRows.map((r) => r.word);
 
   // --- motif frequency ---
   // r7: tracks a per-motif mood breakdown so the Atlas view can show how a
@@ -230,6 +241,7 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
     latestDream: dreams[dreams.length - 1]?.createdAt.toISOString() ?? null,
     atlas,
     timeline,
-    lexicon: computeLexicon(dreams.map((d) => ({ text: d.rawText ?? "" }))),
+    lexicon: computeLexicon(dreams.map((d) => ({ text: d.rawText ?? "" })), new Set(lexiconIgnored)),
+    lexiconIgnored,
   };
 }

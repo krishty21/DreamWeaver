@@ -23,6 +23,7 @@ model User {
 
   dreams    Dream[]
   sessions  ArcadeSession[]
+  lexiconIgnores LexiconIgnore[]
 }
 
 // A single recorded dream. The raw user input is preserved verbatim; structured
@@ -121,6 +122,9 @@ model ArcadeSession {
   // dream's raw text, never model internals, never the dreamer's identity).
   shareToken String?
   sharedAt   DateTime?
+  // r11 — optional expiry for the story share, mirroring dream shareExpiresAt.
+  // When set and in the past, the public story endpoint 404s with { error: "expired" }.
+  shareExpiresAt DateTime?
   turns      SessionTurn[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
@@ -156,6 +160,19 @@ model SessionTurn {
   createdAt      DateTime @default(now())
 
   @@index([sessionId, turnNumber])
+}
+
+// r11 — words the dreamer has muted from their dream lexicon (Patterns view).
+// The lexicon is recomputed app-side on every request with these excluded, so
+// ignoring a surface-noise word lets the next recurring word surface instead.
+model LexiconIgnore {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  word      String // normalised lowercase, 4–16 chars, [a-z']
+  createdAt DateTime @default(now())
+
+  @@unique([userId, word])
 }
 
 model Account {

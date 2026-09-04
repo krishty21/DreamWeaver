@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useMemo } from "react";
+import { useToast } from "@/hooks/use-toast";
 import type { AtlasEntry, Mood, PatternReport, TimelinePoint } from "@/lib/types";
 import { MOOD_COLORS, MOODS } from "@/lib/moods";
 
@@ -54,6 +55,7 @@ type DreamMeta = {
 };
 
 export function AtlasView() {
+  const { toast } = useToast();
   const navigate = useApp((s) => s.navigate);
   const { data, isLoading } = useQuery({ queryKey: ["patterns"], queryFn: fetchPatterns });
   // r8 — also fetch the dreams list so we can map dreamIds → titles/dates/moods
@@ -345,6 +347,8 @@ export function AtlasView() {
   // r10 — clicking a co-occurrence chip opens a DREAM ECHO: the two most
   // recent dreams that contain BOTH motifs, side by side, with the shared
   // thread highlighted. Computed app-side from the cached dreams list.
+  // r11 — when fewer than two nights carry both motifs, the fallback is now
+  // explained with a toast instead of silently opening a single dream.
   function echoPair(a: string, b: string) {
     const la = a.toLowerCase();
     const lb = b.toLowerCase();
@@ -355,8 +359,19 @@ export function AtlasView() {
       })
       .sort((x: any, y: any) => (x.createdAt < y.createdAt ? 1 : -1));
     if (withBoth.length < 2) {
-      // not enough dreams to echo — fall back to the newest one
-      if (withBoth.length === 1) navigate("dream", { dreamId: withBoth[0].id });
+      // not enough dreams to echo — fall back to the newest one, and say so
+      if (withBoth.length === 1) {
+        toast({
+          title: "Not enough nights for an echo",
+          description: `Only one dream carries both “${a}” and “${b}” — opening that night instead. Record more dreams and the echo unlocks.`,
+        });
+        navigate("dream", { dreamId: withBoth[0].id });
+      } else {
+        toast({
+          title: "No dream carries both motifs yet",
+          description: `“${a}” and “${b}” haven't met in the same night.`,
+        });
+      }
       return;
     }
     navigate("echo", { dreamId: withBoth[0].id, echoId: withBoth[1].id });

@@ -12,6 +12,9 @@ import { db } from "@/lib/db";
 //   (proposedDeltaJson / appliedDeltaJson / modelRaw), internal ids, the
 //   dreamer's email, or any other session.
 // - Revoking (shareToken → null) makes this endpoint 404 immediately.
+// - r11: an expiry date in the past closes the link too — reported as
+//   { error: "expired" } so the public page can say so, without revealing
+//   anything else.
 export async function GET(_req: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!token || token.length < 16 || !/^[a-f0-9]+$/i.test(token)) {
@@ -28,6 +31,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
   });
   if (!session || session.status !== "ended" || !session.ending) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  // r11 — an expired window closes the story (same code path as dream shares)
+  if (session.shareExpiresAt && session.shareExpiresAt.getTime() < Date.now()) {
+    return NextResponse.json(
+      { error: "expired" },
+      { headers: { "Cache-Control": "no-store" }, status: 404 }
+    );
   }
 
   // final authoritative state — meters only, no internals
@@ -61,6 +71,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
         // day-level precision only — no timestamps
         beganOn: session.createdAt.toISOString().slice(0, 10),
         sharedAt: session.sharedAt ? session.sharedAt.toISOString().slice(0, 10) : null,
+        // r11 — day-level precision; lets readers see the window closes
+        expiresAt: session.shareExpiresAt ? session.shareExpiresAt.toISOString() : null,
         turnsCount: session.turns.length,
         dream: {
           title: session.dream.title ?? "A dream",
