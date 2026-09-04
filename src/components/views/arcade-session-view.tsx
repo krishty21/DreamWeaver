@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Loader2, Send, Compass, RotateCcw, Brain, Sparkles, Moon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { SimulationState, ArcadeChoice } from "@/lib/types";
 
@@ -16,6 +16,16 @@ async function fetchSession(id: string) {
   return res.json();
 }
 
+// Rotating whispers shown while the model composes the next scene — turns
+// unavoidable LLM latency into part of the dream's texture.
+const WHISPERS = [
+  "somewhere behind your eyes, the scene is assembling…",
+  "a door is deciding whether to open…",
+  "the motifs are finding each other again…",
+  "the dream is remembering you…",
+  "the next moment is choosing its shape…",
+];
+
 export function ArcadeSessionView() {
   const sessionId = useApp((s) => s.activeSessionId);
   const navigate = useApp((s) => s.navigate);
@@ -23,6 +33,22 @@ export function ArcadeSessionView() {
   const { toast } = useToast();
   const [pending, setPending] = useState(false);
   const [action, setAction] = useState("");
+  const [whisper, setWhisper] = useState(0);
+  const [elapsedSec, setElapsedSec] = useState(0);
+
+  // While a turn is pending: rotate whispers + count seconds, so waiting feels
+  // like drifting rather than stalling.
+  useEffect(() => {
+    if (!pending) return;
+    setWhisper(0);
+    setElapsedSec(0);
+    const wi = setInterval(() => setWhisper((w) => (w + 1) % WHISPERS.length), 3600);
+    const si = setInterval(() => setElapsedSec((s) => s + 1), 1000);
+    return () => {
+      clearInterval(wi);
+      clearInterval(si);
+    };
+  }, [pending]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["session", sessionId],
@@ -209,17 +235,57 @@ export function ArcadeSessionView() {
           );
         })}
 
-        {/* loading turn */}
+        {/* loading turn — the dream forms */}
         <AnimatePresence>
           {pending && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
-              className="flex items-center gap-3 text-sm text-muted-foreground"
+              transition={{ duration: 0.35 }}
+              className="rounded-xl border border-border/70 bg-card/40 p-5"
+              role="status"
+              aria-live="polite"
             >
-              <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="italic">The dream is forming the next scene…</span>
+              <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-4">
+                <span className="tracking-caps uppercase flex items-center gap-2">
+                  <span className="rec-dot h-1.5 w-1.5 rounded-full bg-foreground" aria-hidden="true" />
+                  The dream is forming
+                </span>
+                <span className="font-data tabular-nums" aria-label={`${elapsedSec} seconds`}>
+                  {elapsedSec}s
+                </span>
+              </div>
+              <div className="flex items-start gap-4">
+                <div className="relative h-12 w-12 shrink-0" aria-hidden="true">
+                  <span
+                    className="drift-orb absolute inset-0 rounded-full pulse-soft"
+                    style={{
+                      background:
+                        "radial-gradient(circle at 35% 30%, rgba(216,207,208,0.95), rgba(105,113,132,0.5) 60%, rgba(65,63,61,0.9) 100%)",
+                    }}
+                  />
+                  <Moon className="absolute inset-0 m-auto h-4 w-4 text-background" strokeWidth={1.8} />
+                </div>
+                <div className="flex-1 space-y-2.5 pt-1" aria-hidden="true">
+                  <div className="shimmer-line h-3 w-11/12" />
+                  <div className="shimmer-line h-3 w-full" />
+                  <div className="shimmer-line h-3 w-4/5" />
+                  <div className="shimmer-line h-3 w-3/5" />
+                </div>
+              </div>
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={whisper}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{ duration: 0.5 }}
+                  className="mt-4 font-display italic text-lg text-muted-foreground whisper"
+                >
+                  {WHISPERS[whisper]}
+                </motion.p>
+              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>

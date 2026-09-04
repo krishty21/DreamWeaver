@@ -364,3 +364,72 @@
   outline: 2px solid var(--ring);
   outline-offset: 2px;
 }
+
+/* ---------- Voice capture ---------- */
+
+/* Expanding concentric rings while the microphone listens */
+@keyframes ringOut {
+  0% { transform: scale(0.62); opacity: 0.55; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+.ring-rec {
+  border: 1px solid color-mix(in srgb, var(--mauve) 70%, transparent);
+  animation: ringOut 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+  will-change: transform, opacity;
+}
+/* The listening orb reacts to live mic level via --lvl (0..1) set from JS */
+.orb-rec {
+  background:
+    radial-gradient(circle at 35% 30%, rgba(216, 207, 208, 0.95), rgba(105, 113, 132, 0.55) 60%, rgba(65, 63, 61, 0.92) 100%);
+  transform: scale(calc(0.86 + var(--lvl, 0.12) * 0.22));
+  transition: transform 90ms linear;
+  box-shadow: 0 10px 30px -12px rgba(105, 113, 132, 0.65);
+}
+/* Blinking recording dot */
+@keyframes recBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+.rec-dot { animation: recBlink 1.4s ease-in-out infinite; }
+
+/* ---------- Arcade turn latency: shimmering scene placeholder ---------- */
+@keyframes shimmerLine {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.shimmer-line {
+  position: relative;
+  overflow: hidden;
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--mauve) 18%, transparent);
+}
+.shimmer-line::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 10%, transparent), transparent);
+  animation: shimmerLine 1.8s ease-in-out infinite;
+}
+/* Slow-drifting orb used while a scene forms */
+@keyframes driftOrb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(6px, -8px) scale(1.06); }
+  66% { transform: translate(-7px, 5px) scale(0.96); }
+}
+.drift-orb { animation: driftOrb 7s ease-in-out infinite; }
+
+/* ---------- Dashboard stat tiles ---------- */
+.stat-tile {
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.stat-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.6) inset, 0 16px 32px -20px rgba(65, 63, 61, 0.28);
+}
+
+/* Whisper text — italic serif that breathes (used while the dream forms) */
+@keyframes whisperFade {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.9; }
+}
+.whisper { animation: whisperFade 2.8s ease-in-out infinite; }

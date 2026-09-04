@@ -3,9 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map, ArrowRight, Loader2, BookOpenText } from "lucide-react";
+import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map as MapIcon, ArrowRight, TrendingUp, Gamepad2, CalendarCheck2, BookOpenText } from "lucide-react";
 import { motion } from "framer-motion";
-import { useMemo } from "react";
 
 async function fetchMe() {
   const res = await fetch("/api/me");
@@ -24,6 +23,82 @@ async function fetchPatterns() {
   return res.json();
 }
 
+const dateKey = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Streaks are computed app-side from dream timestamps — never guessed.
+function dreamStats(dreams: { createdAt: string }[]) {
+  const dates = new Set(dreams.map((d) => dateKey(new Date(d.createdAt))));
+  const nightsRemembered = dates.size;
+
+  // current streak: consecutive dream-days ending today (or yesterday, so an
+  // unbroken run isn't reset the moment you wake up late)
+  let streak = 0;
+  const cursor = new Date();
+  if (!dates.has(dateKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+  while (dates.has(dateKey(cursor))) {
+    streak++;
+    cursor.setDate(cursor.getDate() - 1);
+  }
+
+  // longest run across all recorded history
+  const sorted = [...dates].sort();
+  let longest = 0;
+  let run = 0;
+  let prev: string | null = null;
+  for (const d of sorted) {
+    if (prev) {
+      const p = new Date(prev + "T00:00:00");
+      p.setDate(p.getDate() + 1);
+      run = dateKey(p) === d ? run + 1 : 1;
+    } else {
+      run = 1;
+    }
+    longest = Math.max(longest, run);
+    prev = d;
+  }
+  return { streak, nightsRemembered, longestStreak: Math.max(longest, streak) };
+}
+
+// Rank revisit candidates: motifs that recur across dreams carry weight;
+// dreams already re-entered many times sink. Ties resolve oldest-first.
+function pickRevisit(
+  dreams: any[],
+  sessions: any[],
+  topMotifs: { label: string; count: number }[]
+): { dream: any; matched: { label: string; count: number }[] } | null {
+  if (!dreams.length) return null;
+  const weight = new Map<string, { label: string; count: number; w: number }>();
+  topMotifs.forEach((m, i) => {
+    weight.set(m.label.toLowerCase(), { label: m.label, count: m.count, w: topMotifs.length - i });
+  });
+  const sessionCount = new Map<string, number>();
+  for (const s of sessions) {
+    if (s.dreamId) sessionCount.set(s.dreamId, (sessionCount.get(s.dreamId) ?? 0) + 1);
+  }
+
+  let best: { dream: any; matched: { label: string; count: number }[] } | null = null;
+  let bestScore = -Infinity;
+  for (const d of [...dreams].reverse()) {
+    // dreams arrive newest-first; reverse → oldest-first tie-break
+    const labels = new Set((d.motifs ?? []).map((m: any) => String(m.label).toLowerCase()));
+    const matched: { label: string; count: number }[] = [];
+    let score = 0;
+    for (const [key, m] of weight) {
+      if (labels.has(key)) {
+        score += m.w;
+        matched.push({ label: m.label, count: m.count });
+      }
+    }
+    score = score * 2 - (sessionCount.get(d.id) ?? 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = { dream: d, matched };
+    }
+  }
+  return best;
+}
+
 export function DashboardView() {
   const navigate = useApp((s) => s.navigate);
   const { data: me } = useQuery({ queryKey: ["me"], queryFn: fetchMe });
@@ -37,7 +112,9 @@ export function DashboardView() {
   const recent = dreams[0];
   const recentSession = sessions[0];
   const topMotifs = (report?.topMotifs ?? []).slice(0, 5);
-  const recommended = dreams[dreams.length - 1]; // oldest dream → revisit
+  const stats = dreamStats(dreams);
+  const revisit = pickRevisit(dreams, sessions, report?.topMotifs ?? []);
+  const recommended = revisit?.dream ?? dreams[dreams.length - 1];
 
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "Late tonight" : hour < 12 ? "This morning" : hour < 18 ? "This afternoon" : "Tonight";
@@ -87,7 +164,45 @@ export function DashboardView() {
       {dreams.length === 0 ? (
         <FirstDream onCapture={() => navigate("capture")} />
       ) : (
-        <div className="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-5">
+        <>
+          {/* observatory stats */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.03 }}
+            className="mt-10 grid grid-cols-2 sm:grid-cols-4 gap-3"
+            aria-label="Your dream observatory at a glance"
+          >
+            <StatTile
+              icon={<Moon className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />}
+              value={dreams.length}
+              label={dreams.length === 1 ? "dream kept" : "dreams kept"}
+            />
+            <StatTile
+              icon={<CalendarCheck2 className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />}
+              value={stats.nightsRemembered}
+              label={stats.nightsRemembered === 1 ? "night remembered" : "nights remembered"}
+            />
+            <StatTile
+              icon={<TrendingUp className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />}
+              value={stats.streak > 0 ? stats.streak : "—"}
+              label={
+                stats.streak > 0
+                  ? stats.streak === 1
+                    ? "night in a row"
+                    : "nights in a row"
+                  : `best ${stats.longestStreak}`
+              }
+              accent={stats.streak > 0}
+            />
+            <StatTile
+              icon={<Gamepad2 className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />}
+              value={sessions.length}
+              label={sessions.length === 1 ? "arcade session" : "arcade sessions"}
+            />
+          </motion.div>
+
+          <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Recent dream — big */}
           {recent && (
             <motion.button
@@ -149,18 +264,35 @@ export function DashboardView() {
               transition={{ duration: 0.5, delay: 0.15 }}
               className="surface p-6 lg:col-span-2 flex flex-col sm:flex-row sm:items-center gap-4 justify-between"
             >
-              <div>
+              <div className="min-w-0">
                 <div className="text-xs tracking-caps uppercase text-muted-foreground mb-1">
                   Worth revisiting
                 </div>
-                <h3 className="font-display text-2xl tracking-tight">{recommended.title || "A dream"}</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  An older dream. Time to re-enter it as an interactive world.
-                </p>
+                <h3 className="font-display text-2xl tracking-tight truncate">
+                  {recommended.title || "A dream"}
+                </h3>
+                {revisit && revisit.matched.length > 0 ? (
+                  <>
+                    <p className="text-sm text-muted-foreground mt-1 pretty">
+                      Carries your most recurrent motifs — they keep returning.
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {revisit.matched.slice(0, 3).map((m) => (
+                        <span key={m.label} className="chip capitalize">
+                          {m.label} ×{m.count}
+                        </span>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground mt-1 pretty">
+                    An older dream. Time to re-enter it as an interactive world.
+                  </p>
+                )}
               </div>
               <Button
                 onClick={() => navigate("arcade", { dreamId: recommended.id })}
-                className="h-11 bg-foreground text-background hover:opacity-90"
+                className="h-11 bg-foreground text-background hover:opacity-90 shrink-0"
               >
                 <Compass className="h-4 w-4" strokeWidth={1.6} />
                 Re-enter
@@ -216,13 +348,47 @@ export function DashboardView() {
                 onClick={() => navigate("patterns")}
                 className="mt-auto pt-4 text-sm text-foreground hover:opacity-70 inline-flex items-center gap-1.5"
               >
-                <Map className="h-4 w-4" strokeWidth={1.6} />
+                <MapIcon className="h-4 w-4" strokeWidth={1.6} />
                 See full pattern
               </button>
             </motion.div>
           )}
-        </div>
+          </div>
+        </>
       )}
+    </div>
+  );
+}
+
+function StatTile({
+  icon,
+  value,
+  label,
+  accent,
+}: {
+  icon: React.ReactNode;
+  value: number | string;
+  label: string;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      className="surface-quiet stat-tile px-4 py-3.5 flex items-center gap-3"
+      aria-label={`${typeof value === "number" ? value : ""} ${label}`}
+    >
+      <span
+        className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full ${
+          accent ? "bg-foreground text-background" : "bg-foreground/[0.06] text-foreground"
+        }`}
+      >
+        {icon}
+      </span>
+      <span className="min-w-0">
+        <span className="block font-display text-2xl leading-none tabular-nums">{value}</span>
+        <span className="block text-[11px] text-muted-foreground tracking-caps uppercase mt-1 truncate">
+          {label}
+        </span>
+      </span>
     </div>
   );
 }

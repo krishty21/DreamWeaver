@@ -43,8 +43,8 @@ export function LandingView() {
 
       {/* hero */}
       <section className="relative mx-auto w-full max-w-6xl px-5 sm:px-8 pt-16 sm:pt-24 pb-20">
-        {/* floating dream fragments — soft surrealism */}
-        <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
+        {/* floating dream fragments — soft surrealism (decorative only, never intercepts clicks) */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none select-none" aria-hidden="true">
           <span className="fragment" style={{ left: "8%", top: "12%", animationDelay: "0s", fontSize: "1.4rem" }}>the same door…</span>
           <span className="fragment" style={{ left: "78%", top: "6%", animationDelay: "-3s", fontSize: "1.15rem" }}>an ocean, again</span>
           <span className="fragment" style={{ left: "16%", top: "58%", animationDelay: "-6s", fontSize: "1.25rem" }}>someone calling</span>
