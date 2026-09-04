@@ -27,6 +27,7 @@ import {
   Headphones,
   Play,
   Pause,
+  Printer,
   X,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -43,6 +44,7 @@ import type {
   Interpretation,
   HistoricalConnection,
 } from "@/lib/types";
+import { Repeat } from "lucide-react";
 
 async function fetchDream(id: string) {
   const res = await fetch(`/api/dreams/${id}`);
@@ -183,7 +185,26 @@ export function DreamDetailView() {
 
   return (
     <div className="mx-auto w-full max-w-4xl px-5 sm:px-8 py-10 sm:py-14">
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-8">
+      {/* r10 — paper-only masthead. Never rendered on screen; gives the
+          printed record a small archival document header. */}
+      <div className="print-only" aria-hidden="true">
+        <div
+          className="flex items-baseline justify-between border-b pb-2 mb-6"
+          style={{ borderColor: "#d9d1d2" }}
+        >
+          <span
+            className="font-data uppercase"
+            style={{ fontSize: "10px", letterSpacing: "0.22em", color: "#697184" }}
+          >
+            DreamWeaver · dream record
+          </span>
+          <span className="font-data" style={{ fontSize: "10px", color: "#697184" }}>
+            printed {new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" })}
+          </span>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-8 no-print">
         <button
           onClick={() => navigate("journal")}
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition focus-ring"
@@ -191,7 +212,7 @@ export function DreamDetailView() {
           <ArrowLeft className="h-4 w-4" strokeWidth={1.6} />
           Journal
         </button>
-        <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 sm:gap-2 ml-auto">
           <Button
             variant="outline"
             size="sm"
@@ -260,6 +281,18 @@ export function DreamDetailView() {
           >
             <FileDown className="h-4 w-4" strokeWidth={1.6} />
           </Button>
+          {/* r10 — print the dream record on paper. The @media print rules in
+              globals.css strip the app chrome and keep the document. */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => window.print()}
+            className="h-9"
+            aria-label="Print this dream record"
+          >
+            <Printer className="h-4 w-4" strokeWidth={1.6} />
+            <span className="sr-only sm:not-sr-only sm:ml-1.5">Print</span>
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -274,6 +307,7 @@ export function DreamDetailView() {
 
       {/* Share panel — visible while the reflection is shared */}
       {shareToken && (
+        <div className="no-print">
         <SharePanel
           url={shareUrl}
           includeRaw={!!dream.shareIncludeRaw}
@@ -285,6 +319,7 @@ export function DreamDetailView() {
           onRevoke={onRevokeShare}
           onPreview={() => navigate("shared", { shareToken })}
         />
+        </div>
       )}
 
       {/* r7 — audio player. The dream is read back to the user by Gemini TTS.
@@ -401,6 +436,22 @@ export function DreamDetailView() {
                     <div>
                       <div className="font-display text-xl">{cap(c.motif)}</div>
                       {c.note && <p className="text-sm text-muted-foreground mt-0.5">{c.note}</p>}
+                      {/* r10 — echo: compare this dream with the most recent
+                          prior dream that shares this motif, side by side. */}
+                      {c.dreamIds.length > 0 && (
+                        <button
+                          onClick={() =>
+                            navigate("echo", {
+                              dreamId: dream.id,
+                              echoId: c.dreamIds[c.dreamIds.length - 1],
+                            })
+                          }
+                          className="mt-2 inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition focus-ring rounded echo-cta no-print"
+                        >
+                          <Repeat className="h-3 w-3" strokeWidth={1.7} aria-hidden="true" />
+                          Echo with the prior dream
+                        </button>
+                      )}
                     </div>
                     <div className="text-right text-xs text-muted-foreground">
                       <span className="font-data">{c.dreamIds.length}</span>{" "}
@@ -429,7 +480,7 @@ export function DreamDetailView() {
           )}
 
           {/* Re-enter CTA */}
-          <section className="mt-14 surface p-7 text-center">
+          <section className="mt-14 surface p-7 text-center no-print">
             <h3 className="font-display text-3xl tracking-display balance">
               This dream can become a world you revisit.
             </h3>
@@ -447,6 +498,23 @@ export function DreamDetailView() {
           </section>
         </>
       )}
+
+      {/* r10 — paper-only colophon: closes the printed record with the
+          same honesty the app shows on screen. Sits outside the analysis
+          conditional so it prints for every dream, reflected or not. */}
+      <div className="print-only" aria-hidden="true">
+        <div
+          className="flex items-baseline justify-between border-t pt-2 mt-8"
+          style={{ borderColor: "#d9d1d2" }}
+        >
+          <span className="font-data" style={{ fontSize: "9px", color: "#697184" }}>
+            Reflections are AI-generated and advisory; the raw memory is your own.
+          </span>
+          <span className="font-data" style={{ fontSize: "9px", color: "#697184" }}>
+            DreamWeaver
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -565,7 +633,7 @@ function DreamAudioPlayer({
       animate={{ opacity: 1, y: 0, height: "auto" }}
       exit={{ opacity: 0, height: 0 }}
       transition={{ duration: 0.3 }}
-      className="surface p-5 sm:p-6 mb-2 overflow-hidden"
+      className="surface p-5 sm:p-6 mb-2 overflow-hidden no-print"
       role="region"
       aria-label="Spoken narration of this dream"
     >

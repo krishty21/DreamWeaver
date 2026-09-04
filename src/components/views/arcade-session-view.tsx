@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ArrowLeft, Loader2, Send, Compass, RotateCcw, Brain, Sparkles, Moon } from "lucide-react";
+import { ArrowLeft, Loader2, Send, Compass, RotateCcw, Brain, Sparkles, Moon, Share2, Copy, Check, Link2Off, BookOpenText } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -368,7 +368,9 @@ export function ArcadeSessionView() {
           <p className="mt-2 text-sm text-muted-foreground pretty max-w-md mx-auto">
             {endingBody(session.ending)}
           </p>
-          <div className="mt-6 flex items-center justify-center gap-3">
+          {/* r10 — share the session as a public read-only story */}
+          <StoryShare session={session} />
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
             <Button
               onClick={() => navigate("arcade", { dreamId: session.dream.id })}
               className="h-11 bg-foreground text-background hover:opacity-90"
@@ -454,6 +456,137 @@ export function ArcadeSessionView() {
           </motion.div>
         )
       )}
+    </div>
+  );
+}
+
+// r10 — Story share controls for an ENDED session. Creates a read-only public
+// link to the session's narrative (#/story/<token>) that works signed-out.
+// The share never exposes the dream's raw text — only the story of the
+// re-entry: mode, every turn (action + scene), the ending, the final meters.
+function StoryShare({ session }: { session: any }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const navigate = useApp((s) => s.navigate);
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const token: string | null = session.shareToken ?? null;
+  const url =
+    token && typeof window !== "undefined" ? `${window.location.origin}/#/story/${token}` : "";
+
+  async function onShare() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/arcade/sessions/${session.id}/share`, { method: "POST" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "The story could not be shared.");
+      await qc.invalidateQueries({ queryKey: ["session", session.id] });
+      const link = body?.share?.token
+        ? `${window.location.origin}/#/story/${body.share.token}`
+        : "";
+      if (link && navigator.clipboard) {
+        navigator.clipboard.writeText(link).catch(() => {});
+      }
+      toast({
+        title: "Story shared",
+        description: "A read-only link was copied to your clipboard. The dream's raw memory stays private.",
+      });
+    } catch (e: any) {
+      toast({ title: "Sharing failed", description: e.message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onRevoke() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/arcade/sessions/${session.id}/share`, { method: "DELETE" });
+      if (!res.ok) throw new Error("The link could not be revoked.");
+      await qc.invalidateQueries({ queryKey: ["session", session.id] });
+      toast({
+        title: "Story withdrawn",
+        description: "The link no longer resolves. The story returns to private memory.",
+      });
+    } catch (e: any) {
+      toast({ title: "Revoke failed", description: e.message, variant: "destructive" });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onCopy() {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }
+
+  if (!token) {
+    return (
+      <div className="mt-5">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onShare}
+          disabled={busy}
+          className="h-9 story-share-btn"
+          aria-label="Share this session as a read-only story"
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Share2 className="h-4 w-4" strokeWidth={1.6} />}
+          <span className="ml-1.5">Share this story</span>
+        </Button>
+        <p className="mt-2 text-[11px] text-muted-foreground pretty max-w-md mx-auto">
+          A read-only page with the whole re-entry — your choices, the scenes, the ending. The
+          recorded dream itself is never included.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-5 story-share-row">
+      <div className="flex items-center justify-center gap-2 flex-wrap">
+        <button
+          onClick={onCopy}
+          className="story-link-chip inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs focus-ring"
+          aria-label="Copy the story link"
+          title={url}
+        >
+          {copied ? (
+            <Check className="h-3 w-3 text-foreground" strokeWidth={2} />
+          ) : (
+            <Copy className="h-3 w-3" strokeWidth={1.7} />
+          )}
+          {copied ? "copied" : "story link"}
+        </button>
+        <button
+          onClick={() => navigate("story", { shareToken: token })}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs border border-border hover:bg-foreground/[0.04] transition focus-ring"
+        >
+          <BookOpenText className="h-3 w-3" strokeWidth={1.7} />
+          Read as story
+        </button>
+        <button
+          onClick={onRevoke}
+          disabled={busy}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs text-muted-foreground hover:text-destructive transition focus-ring disabled:opacity-50"
+          aria-label="Withdraw the story link"
+        >
+          <Link2Off className="h-3 w-3" strokeWidth={1.7} />
+          withdraw
+        </button>
+      </div>
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        Shared {session.sharedAt ? new Date(session.sharedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "recently"} · read-only · the recorded dream stays private
+      </p>
     </div>
   );
 }

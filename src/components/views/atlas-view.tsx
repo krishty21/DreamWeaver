@@ -327,13 +327,40 @@ export function AtlasView() {
           </p>
           <div className="flex flex-wrap gap-2">
             {recurringPairs.map((p, i) => (
-              <CoOccurrenceChip key={`${p.a}-${p.b}`} a={p.a} b={p.b} count={p.count} index={i} />
+              <CoOccurrenceChip
+                key={`${p.a}-${p.b}`}
+                a={p.a}
+                b={p.b}
+                count={p.count}
+                index={i}
+                onEcho={() => echoPair(p.a, p.b)}
+              />
             ))}
           </div>
         </motion.section>
       )}
     </div>
   );
+
+  // r10 — clicking a co-occurrence chip opens a DREAM ECHO: the two most
+  // recent dreams that contain BOTH motifs, side by side, with the shared
+  // thread highlighted. Computed app-side from the cached dreams list.
+  function echoPair(a: string, b: string) {
+    const la = a.toLowerCase();
+    const lb = b.toLowerCase();
+    const withBoth = (dreamsData?.dreams ?? [])
+      .filter((d: any) => {
+        const labels = (d.motifs ?? []).map((m: any) => String(m.label).toLowerCase());
+        return labels.includes(la) && labels.includes(lb);
+      })
+      .sort((x: any, y: any) => (x.createdAt < y.createdAt ? 1 : -1));
+    if (withBoth.length < 2) {
+      // not enough dreams to echo — fall back to the newest one
+      if (withBoth.length === 1) navigate("dream", { dreamId: withBoth[0].id });
+      return;
+    }
+    navigate("echo", { dreamId: withBoth[0].id, echoId: withBoth[1].id });
+  }
 }
 
 function FilterChip({
@@ -369,26 +396,30 @@ function FilterChip({
 }
 
 // r8 — Co-occurrence chip: shows "motif a · motif b" with a "× N" badge.
-// Both motif labels are clickable as a unit, but we keep them visually
-// separated so the pair reads as a pair.
+// r10 — the chip now OPENS a dream echo (the two most recent dreams that
+// contain both motifs, side by side) instead of being purely decorative.
 function CoOccurrenceChip({
   a,
   b,
   count,
   index,
+  onEcho,
 }: {
   a: string;
   b: string;
   count: number;
   index: number;
+  onEcho: () => void;
 }) {
   return (
-    <motion.span
+    <motion.button
       initial={{ opacity: 0, y: 4 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.25, delay: Math.min(index * 0.04, 0.4) }}
-      className="co-occurrence-chip inline-flex items-center gap-2 px-3 py-1.5 rounded-full surface-quiet lift"
-      title={`These motifs have appeared together in ${count} of your dreams.`}
+      onClick={onEcho}
+      className="co-occurrence-chip inline-flex items-center gap-2 px-3 py-1.5 rounded-full surface-quiet lift focus-ring"
+      title={`Compare the two most recent dreams where both appeared — they have shown up together in ${count} of your dreams.`}
+      aria-label={`Compare dreams containing ${a} and ${b}`}
     >
       <span className="capitalize text-sm">{a}</span>
       <span className="text-muted-foreground/50 text-[10px] tracking-caps uppercase">·</span>
@@ -399,7 +430,7 @@ function CoOccurrenceChip({
       >
         ×{count}
       </span>
-    </motion.span>
+    </motion.button>
   );
 }
 

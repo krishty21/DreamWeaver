@@ -2,10 +2,15 @@
 
 // r9 — Command palette (⌘K / Ctrl+K).
 // A keyboard-first way to move through the dream memory: fuzzy search across
-// every recorded dream (title + raw text + reflection summary) plus quick
-// actions (capture, journal, patterns, atlas, arcade, today). Muscle memory
-// from earlier rounds still works: ⌘K then Enter = capture, because
-// "Capture a dream" is always the first action.
+// every recorded dream plus quick actions (capture, journal, patterns, atlas,
+// arcade, today). Muscle memory from earlier rounds still works: ⌘K then
+// Enter = capture, because "Capture a dream" is always the first action.
+//
+// r10 — the search haystack now matches the journal's: title, raw text,
+// reflection summary AND the structured elements Gemini surfaced (motifs,
+// symbols, people, places, actions). A match that comes from a structured
+// element shows a small pill naming the field ("motif", "person"…) so the
+// user can see WHY this dream surfaced.
 //
 // Data comes from the react-query ["dreams"] cache (already fetched by the
 // journal / dashboard / atlas) so the palette opens with zero latency.
@@ -77,6 +82,10 @@ type DreamResult = {
   snippet: string;
   dateLabel: string;
   score: number;
+  // r10 — when the best (or a strong) match came from a structured element,
+  // name the field + the element so the result row explains itself.
+  via?: string; // "motif" | "symbol" | "person" | "place" | "action"
+  viaLabel?: string; // the matched element, e.g. "security guard"
 };
 
 type Item = Action | DreamResult;
@@ -101,6 +110,28 @@ function snippetAround(text: string, q: string, radius = 46): string {
   const start = Math.max(0, idx - radius);
   const end = Math.min(text.length, idx + n.length + radius);
   return (start > 0 ? "…" : "") + text.slice(start, end).trim() + (end < text.length ? "…" : "");
+}
+
+// r10 — structured-element search fields. Mirrors the journal's haystack
+// (motifs, symbols, people, locations) and adds actions so the two search
+// surfaces stay aligned. Weight < 1 so an exact title match always wins over
+// an exact element match; people rank slightly above motifs because a name
+// is usually what the dreamer is looking for.
+const VIA_FIELDS: { via: string; weight: number; json: string; key: string }[] = [
+  { via: "person", weight: 0.93, json: "peopleJson", key: "name" },
+  { via: "motif", weight: 0.9, json: "motifsJson", key: "label" },
+  { via: "symbol", weight: 0.88, json: "symbolsJson", key: "label" },
+  { via: "place", weight: 0.87, json: "locationsJson", key: "label" },
+  { via: "action", weight: 0.86, json: "actionsJson", key: "label" },
+];
+
+function safeParseArray(v: unknown): any[] {
+  try {
+    const parsed = typeof v === "string" ? JSON.parse(v) : v;
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 export function CommandPalette() {
@@ -172,16 +203,49 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
       const titleScore = fuzzyScore(d.title ?? "", q);
       const rawScore = fuzzyScore(d.rawText ?? "", q);
       const summaryScore = fuzzyScore(d.analysis?.summary ?? "", q);
-      const best = Math.max(titleScore, rawScore * 0.95, summaryScore * 0.9);
+      let best = Math.max(titleScore, rawScore * 0.95, summaryScore * 0.9);
+      // r10 — score every structured element too, keeping the strongest match
+      // per dream along with the field it came from (for the via pill).
+      let via: string | undefined;
+      let viaLabel: string | undefined;
+      const a = d.analysis;
+      if (a) {
+        for (const f of VIA_FIELDS) {
+          for (const item of safeParseArray((a as any)[f.json])) {
+            const label = String(item?.[f.key] ?? "").trim();
+            if (!label) continue;
+            const s = fuzzyScore(label, q);
+            if (s < 0) continue;
+            const weighted = s * f.weight;
+            if (weighted > best) {
+              best = weighted;
+              via = f.via;
+              viaLabel = label;
+            } else if (s >= 2 && (!via || f.weight > 0.9)) {
+              // keep a strong substring match on display even when ranking
+              // was decided by another field — but never overwrite a better via
+              const betterRank = !via || (f.via === "person" && via !== "person");
+              if (betterRank) {
+                via = f.via;
+                viaLabel = label;
+              }
+            }
+          }
+        }
+      }
       if (best < 0) continue;
       scored.push({
         kind: "dream",
         id: `d-${d.id}`,
         dreamId: d.id,
         label: d.title || "Untitled dream",
-        snippet: snippetAround(d.rawText ?? d.analysis?.summary ?? "", q),
+        snippet: via
+          ? `“${viaLabel}” — the ${via} Gemini surfaced in this dream`
+          : snippetAround(d.rawText ?? d.analysis?.summary ?? "", q),
         dateLabel: new Date(d.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
         score: best,
+        via,
+        viaLabel,
       });
     }
     scored.sort((a, b) => b.score - a.score || b.dateLabel.localeCompare(a.dateLabel));
@@ -339,6 +403,11 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
                         <span className="flex items-baseline gap-2">
                           <span className="font-display text-[17px] leading-snug text-foreground truncate">{item.label}</span>
                           <span className="font-data text-[10px] text-muted-foreground shrink-0">{item.dateLabel}</span>
+                          {item.via && (
+                            <span className="palette-via-tag shrink-0" title={`matched the ${item.via} “${item.viaLabel}”`}>
+                              {item.via}
+                            </span>
+                          )}
                         </span>
                         <span className="block text-xs text-muted-foreground font-body truncate italic">{item.snippet}</span>
                       </>

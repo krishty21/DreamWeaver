@@ -115,12 +115,19 @@ model ArcadeSession {
   ending     String? // collapse | escape | control | unresolved | transformed
   // Authoritative simulation state — controlled by the app, never directly by model text.
   stateJson  String   @default("{}")
+  // r10 — read-only public share of this session's STORY. Only ended sessions
+  // can be shared. Same security model as dream shares: the token is a secret;
+  // possession grants read access to the sanitised narrative ONLY (never the
+  // dream's raw text, never model internals, never the dreamer's identity).
+  shareToken String?
+  sharedAt   DateTime?
   turns      SessionTurn[]
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
   @@index([userId, createdAt])
   @@index([dreamId])
+  @@unique([shareToken])
 }
 
 // One turn in the arcade. Records what the user did and what the model generated.
