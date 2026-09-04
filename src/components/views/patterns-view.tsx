@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
-import { Map, Loader2, Sparkles, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Map, Loader2, Sparkles, TrendingUp, TrendingDown, Minus, Feather } from "lucide-react";
 import { motion } from "framer-motion";
-import type { PatternReport } from "@/lib/types";
+import type { PatternReport, LexiconWord } from "@/lib/types";
 import { DreamCalendar } from "@/components/views/dream-calendar";
 
 async function fetchPatterns() {
@@ -183,6 +183,75 @@ export function PatternsView() {
           </p>
         </section>
       </div>
+
+      {/* r9 — Dream lexicon: the words your dreaming mind reaches for most.
+          Computed app-side from raw texts (never the model). Clicking a word
+          jumps to the journal pre-filtered to that word. */}
+      {(report.lexicon ?? []).length > 0 && (
+        <motion.section
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.15 }}
+          className="mt-8 surface p-6 sm:p-8"
+          aria-label="Dream lexicon"
+        >
+          <div className="flex items-start justify-between gap-4 mb-1">
+            <div>
+              <h2 className="font-display text-2xl sm:text-3xl tracking-tight">The lexicon of your dreams</h2>
+              <p className="mt-1 text-[11px] text-muted-foreground italic">
+                The words your memory reaches for, counted across every raw dream — not chosen by the model.
+                Tap a word to find every dream it appears in.
+              </p>
+            </div>
+            <span className="hidden sm:inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground/[0.05]">
+              <Feather className="h-4 w-4 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
+            </span>
+          </div>
+          <LexiconCloud words={report.lexicon} />
+        </motion.section>
+      )}
+    </div>
+  );
+}
+
+// r9 — typographic word cloud. Sizes are scaled between the most and least
+// frequent entries; words fade in with a small stagger so the cloud "surfaces"
+// like a memory rather than rendering all at once.
+function LexiconCloud({ words }: { words: LexiconWord[] }) {
+  const navigate = useApp((s) => s.navigate);
+  const setJournalQuery = useApp((s) => s.setJournalQuery);
+  if (words.length === 0) return null;
+  const maxDreams = words[0].dreamCount;
+  const minDreams = words[words.length - 1].dreamCount;
+  const span = Math.max(1, maxDreams - minDreams);
+  return (
+    <div className="lexicon-cloud mt-5" role="group" aria-label="Words that recur across your dreams">
+      {words.map((w, i) => {
+        const t = (w.dreamCount - minDreams) / span; // 0..1
+        const size = 15 + t * 19; // 15px .. 34px
+        const italic = i % 5 === 2; // every 5th word italic — editorial rhythm
+        return (
+          <motion.button
+            key={w.word}
+            type="button"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: Math.min(i * 0.035, 0.8) }}
+            className="lexicon-word"
+            style={{ fontSize: `${size.toFixed(1)}px`, fontStyle: italic ? "italic" : "normal", fontWeight: t > 0.6 ? 600 : 400 }}
+            title={`“${w.word}” appears in ${w.dreamCount} dream${w.dreamCount === 1 ? "" : "s"} (${w.count} times)`}
+            aria-label={`Find dreams containing the word ${w.word} — appears in ${w.dreamCount} dreams`}
+            onClick={() => {
+              setJournalQuery(w.word);
+              navigate("journal");
+            }}
+          >
+            {w.word}
+            <span className="lexicon-count" aria-hidden="true">×{w.dreamCount}</span>
+          </motion.button>
+        );
+      })}
+      <span className="sr-only">End of lexicon.</span>
     </div>
   );
 }

@@ -66,6 +66,8 @@ function toDayKey(iso: string): string {
 export function JournalView() {
   const navigate = useApp((s) => s.navigate);
   const journalDate = useApp((s) => s.journalDate);
+  const journalQuery = useApp((s) => s.journalQuery);
+  const setJournalQuery = useApp((s) => s.setJournalQuery);
   const { toast } = useToast();
   const { data, isLoading } = useQuery({ queryKey: ["dreams"], queryFn: fetchDreams });
 
@@ -91,6 +93,23 @@ export function JournalView() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // r9 — one-shot search prefill. The Patterns lexicon cloud (and the command
+  // palette) set `journalQuery` in the store before navigating here. The value
+  // is consumed during render with React's "adjust state when a value changes"
+  // pattern (no effect needed); the handoff field is cleared + focused in an
+  // effect because those are external-system syncs (store + DOM).
+  const [consumedQuery, setConsumedQuery] = useState<string | null>(null);
+  if (journalQuery !== consumedQuery) {
+    setConsumedQuery(journalQuery);
+    if (journalQuery) setQuery(journalQuery);
+  }
+  useEffect(() => {
+    if (!journalQuery) return;
+    setJournalQuery(null);
+    const t = setTimeout(() => searchRef.current?.focus(), 80);
+    return () => clearTimeout(t);
+  }, [journalQuery, setJournalQuery]);
 
   function onExport() {
     if (dreams.length === 0) return;

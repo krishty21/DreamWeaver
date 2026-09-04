@@ -11,7 +11,41 @@ import type {
   AtlasEntry,
   TimelinePoint,
   Mood,
+  LexiconWord,
 } from "@/lib/types";
+
+// r9 — English stopwords filtered from the dream lexicon. Deliberately broad:
+// the lexicon should surface imagery nouns (water, door, staircase), not
+// grammar. Kept inline so the module stays dependency-free.
+const STOPWORDS = new Set([
+  "the", "and", "was", "were", "that", "this", "with", "for", "but", "not", "you", "she", "her", "him", "his", "they", "them", "their", "there", "then", "than", "when", "what", "where", "which", "while", "would", "could", "should", "have", "has", "had", "been", "being", "into", "from", "about", "again", "just", "only", "very", "some", "something", "somehow", "someone", "anything", "everything", "nothing", "somebody", "everybody", "nobody",
+  "over", "under", "after", "before", "because", "through", "between", "around", "against", "without", "within", "toward", "towards", "onto", "upon", "off", "out", "up", "down", "back", "away", "here", "now", "still", "even", "also", "almost", "always", "never", "maybe", "perhaps", "really", "actually", "somehow",
+  "like", "just", "know", "knew", "think", "thought", "felt", "feel", "feeling", "seemed", "seems", "seem", "looked", "looking", "looks", "going", "went", "come", "came", "coming", "gets", "got", "getting", "make", "made", "making", "take", "took", "taking", "keep", "kept", "keeping", "start", "started", "starting", "stop", "stopped", "turn", "turned", "turning", "try", "tried", "trying",
+  "me", "my", "mine", "we", "us", "our", "ours", "your", "yours", "it", "its", "its", "im", "id", "ill", "ive", "dont", "didnt", "doesnt", "cant", "couldnt", "wouldnt", "wont", "isnt", "arent", "wasnt", "werent", "thats", "theres", "hers", "himself", "herself", "myself", "itself",
+  "a", "an", "as", "at", "by", "he", "if", "in", "is", "it", "no", "of", "on", "or", "so", "to", "do", "did", "does", "done", "be", "am", "are", "can", "will", "who", "how", "why", "all", "any", "both", "each", "few", "more", "most", "other", "such", "own", "same", "too", "once", "says", "said", "saw", "see", "seen", "eyes", "eye", "around", "behind", "beside", "next",
+]);
+
+function computeLexicon(rawTexts: { text: string }[]): LexiconWord[] {
+  const counts = new Map<string, { count: number; dreams: Set<string> }>();
+  let dreamIdx = 0;
+  for (const { text } of rawTexts) {
+    const id = String(dreamIdx++);
+    const words = text.toLowerCase().match(/[a-z][a-z']*/g) ?? [];
+    for (const w of words) {
+      if (w.length < 4 || w.length > 16) continue;
+      if (STOPWORDS.has(w)) continue;
+      const e = counts.get(w) ?? { count: 0, dreams: new Set<string>() };
+      e.count += 1;
+      e.dreams.add(id);
+      counts.set(w, e);
+    }
+  }
+  return Array.from(counts.entries())
+    .map(([word, e]) => ({ word, count: e.count, dreamCount: e.dreams.size }))
+    // prefer words that recur ACROSS dreams (longitudinal voice), then raw count
+    .sort((a, b) => b.dreamCount - a.dreamCount || b.count - a.count || a.word.localeCompare(b.word))
+    .slice(0, 28);
+}
 
 export async function computePatternReport(userId: string): Promise<PatternReport> {
   const dreams = await db.dream.findMany({
@@ -196,5 +230,6 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
     latestDream: dreams[dreams.length - 1]?.createdAt.toISOString() ?? null,
     atlas,
     timeline,
+    lexicon: computeLexicon(dreams.map((d) => ({ text: d.rawText ?? "" }))),
   };
 }

@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map as MapIcon, ArrowRight, TrendingUp, Gamepad2, CalendarCheck2, BookOpenText, Quote, Clock, TrendingDown, Waypoints } from "lucide-react";
+import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map as MapIcon, ArrowRight, TrendingUp, Gamepad2, CalendarCheck2, BookOpenText, Quote, Clock, TrendingDown, Waypoints, CalendarRange } from "lucide-react";
 import { motion } from "framer-motion";
 import { useMemo } from "react";
 import { MOOD_COLORS } from "@/lib/moods";
@@ -405,6 +405,12 @@ export function DashboardView() {
               happening" line before diving back in. */}
           <LongitudinalInsight report={report} dreams={dreams} />
 
+          {/* r9 — weekly digest. A rolling 7-night snapshot computed app-side
+              from the dreams data: cadence vs the prior week, dominant mood,
+              words captured, and motifs that appeared for the first time.
+              Hidden entirely when no dream was recorded in the last 7 days. */}
+          <WeeklyDigest dreams={dreams} />
+
           <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
           {/* Recent dream — big. r6: mood-accented with a soft glow and motif chips. */}
           {recent && (
@@ -722,6 +728,124 @@ function LongitudinalInsight({ report, dreams }: { report: any; dreams: any[] })
           <span>computed app-side, never the model</span>
         </div>
       </div>
+    </motion.section>
+  );
+}
+
+// r9 — rolling 7-night digest, all computed app-side (no model calls).
+// Returns null when nothing was captured in the last seven days so the
+// dashboard never shows an empty card.
+function WeeklyDigest({ dreams }: { dreams: any[] }) {
+  const digest = useMemo(() => {
+    const now = Date.now();
+    const DAY = 86_400_000;
+    const inWindow = (iso: string, from: number, to: number) => {
+      const t = new Date(iso).getTime();
+      return t >= from && t < to;
+    };
+    const thisWeek = dreams.filter((d) => inWindow(d.createdAt, now - 7 * DAY, now + DAY));
+    const lastWeek = dreams.filter((d) => inWindow(d.createdAt, now - 14 * DAY, now - 7 * DAY));
+    if (thisWeek.length === 0) return null;
+
+    // dominant mood this week (ties → most recent dream's mood wins)
+    const moodTally = new Map<string, number>();
+    for (const d of thisWeek) {
+      const m = d.mood || "neutral";
+      moodTally.set(m, (moodTally.get(m) ?? 0) + 1);
+    }
+    let dominant: string | null = null;
+    let best = 0;
+    for (const [m, c] of moodTally) {
+      if (c > best) {
+        best = c;
+        dominant = m;
+      }
+    }
+
+    // words captured this week (whitespace split on raw text)
+    const words = thisWeek.reduce(
+      (sum: number, d) => sum + ((d.rawText ?? "").trim().match(/\S+/g) ?? []).length,
+      0
+    );
+
+    // motifs that appear this week but never before the window
+    const older = dreams.filter((d) => new Date(d.createdAt).getTime() < now - 7 * DAY);
+    const olderLabels = new Set(
+      older.flatMap((d) => (d.motifs ?? []).map((m: any) => (m.label ?? "").toLowerCase()))
+    );
+    const newMotifs = Array.from(
+      new Set(
+        thisWeek.flatMap((d: any) =>
+          (d.motifs ?? [])
+            .map((m: any) => m.label)
+            .filter((l: string) => l && !olderLabels.has(l.toLowerCase()))
+        )
+      )
+    ).slice(0, 3);
+
+    const delta = thisWeek.length - lastWeek.length;
+    return {
+      count: thisWeek.length,
+      delta,
+      dominant,
+      dominantCount: best,
+      words,
+      newMotifs,
+    };
+  }, [dreams]);
+
+  if (!digest) return null;
+
+  return (
+    <motion.section
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5, delay: 0.1 }}
+      className="mt-5 surface p-5 sm:p-6"
+      aria-label="This week in your dreams"
+    >
+      <div className="text-[11px] tracking-caps uppercase text-muted-foreground mb-4 flex items-center gap-2">
+        <CalendarRange className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
+        This week
+        <span className="h-px w-3 bg-border" />
+        <span className="font-data text-[10px] normal-case tracking-normal">rolling seven nights</span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="digest-stat">
+          <span className="digest-stat-value">
+            {digest.count}
+            {digest.delta !== 0 && (
+              <span
+                className={`ml-1.5 font-data text-[11px] align-middle ${digest.delta > 0 ? "text-foreground/60" : "text-muted-foreground"}`}
+              >
+                {digest.delta > 0 ? `+${digest.delta}` : digest.delta} vs last week
+              </span>
+            )}
+          </span>
+          <span className="digest-stat-label">dreams captured</span>
+        </div>
+        <div className="digest-stat">
+          <span className="digest-stat-value capitalize">{digest.dominant ?? "—"}</span>
+          <span className="digest-stat-label">
+            dominant mood{digest.dominant ? ` · ${digest.dominantCount}×` : ""}
+          </span>
+        </div>
+        <div className="digest-stat">
+          <span className="digest-stat-value">{digest.words.toLocaleString()}</span>
+          <span className="digest-stat-label">words remembered</span>
+        </div>
+        <div className="digest-stat min-w-0">
+          <span className="digest-stat-value block w-full truncate text-xl sm:text-2xl">
+            {digest.newMotifs.length > 0 ? digest.newMotifs.join(", ") : "—"}
+          </span>
+          <span className="digest-stat-label">
+            {digest.newMotifs.length > 0 ? "new motif" + (digest.newMotifs.length > 1 ? "s" : "") : "no new motifs"}
+          </span>
+        </div>
+      </div>
+      <p className="mt-4 text-[11px] text-muted-foreground italic">
+        Computed app-side from your stored dreams — never the model.
+      </p>
     </motion.section>
   );
 }

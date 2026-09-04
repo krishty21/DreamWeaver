@@ -1,6 +1,6 @@
 "use client";
 
-import { Moon, Sparkles, BookOpenText, Map, Compass, User, LogOut, Globe } from "lucide-react";
+import { Moon, Sparkles, BookOpenText, Map, Compass, User, LogOut, Globe, Search } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import { useApp, View } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -19,6 +19,7 @@ export function TopNav() {
   const { status } = useSession();
   const view = useApp((s) => s.view);
   const navigate = useApp((s) => s.navigate);
+  const openPalette = useApp((s) => s.openPalette);
   const authed = status === "authenticated";
 
   if (!authed) return null;
@@ -59,6 +60,18 @@ export function TopNav() {
           </nav>
 
           <div className="ml-auto flex items-center gap-2">
+            {/* r9 — palette trigger. Opens the ⌘K command palette: fuzzy dream
+                search + quick actions. Shown as a quiet search affordance. */}
+            <button
+              onClick={openPalette}
+              className="hidden md:flex items-center gap-2.5 pl-3 pr-2 py-2 rounded-full text-sm text-muted-foreground hover:text-foreground border border-border/70 hover:border-foreground/25 bg-card/40 hover:bg-foreground/[0.04] transition-all focus-ring"
+              aria-label="Open search palette (Command K)"
+              aria-keyshortcuts="Meta+K Control+K"
+            >
+              <Search className="h-3.5 w-3.5" strokeWidth={1.7} aria-hidden="true" />
+              <span className="italic font-display">Search dreams…</span>
+              <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70">⌘K</kbd>
+            </button>
             <button
               onClick={() => navigate("profile")}
               className={cn(
@@ -105,6 +118,14 @@ export function TopNav() {
             );
           })}
           <button
+            onClick={openPalette}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap text-muted-foreground hover:text-foreground transition-all focus-ring"
+            aria-label="Open search palette"
+          >
+            <Search className="h-3.5 w-3.5" strokeWidth={1.7} aria-hidden="true" />
+            Search
+          </button>
+          <button
             onClick={() => navigate("profile")}
             className={cn(
               "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs whitespace-nowrap transition-all focus-ring",
@@ -147,11 +168,11 @@ export function Footer() {
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
           <span className="hidden md:inline-flex items-center gap-1.5" aria-hidden="true">
             <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70">⌘K</kbd>
+            search
+            <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70 ml-1.5">C</kbd>
             capture
             <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70 ml-1.5">J</kbd>
             journal
-            <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70 ml-1.5">A</kbd>
-            arcade
           </span>
           <span>AI reflection is advisory, never clinical.</span>
         </div>

@@ -823,3 +823,158 @@ svg .spark-line-shadow {
   outline-offset: 2px;
 }
 
+/* ============================================================
+   r9 — Command palette (⌘K)
+   An editorial take on the command palette: paper-warm dialog,
+   serif dream titles, mono metadata, and a selection state that
+   reads as a soft ink bar rather than a harsh highlight.
+   ============================================================ */
+.palette-dialog {
+  background: color-mix(in srgb, var(--background) 92%, white 8%);
+  border: 1px solid color-mix(in srgb, var(--mauve) 30%, transparent);
+  box-shadow:
+    0 1px 0 0 rgba(255, 255, 255, 0.7) inset,
+    0 4px 8px rgba(65, 63, 61, 0.06),
+    0 32px 64px -24px rgba(65, 63, 61, 0.4);
+}
+
+.palette-item {
+  position: relative;
+  border-radius: 0.5rem;
+  margin: 0 0.5rem;
+  outline: none;
+}
+.palette-item::before {
+  /* soft ink indicator bar for the selected row */
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 18%;
+  bottom: 18%;
+  width: 2px;
+  border-radius: 9999px;
+  background: transparent;
+  transition: background 160ms ease, top 160ms ease, bottom 160ms ease;
+}
+.palette-item-active {
+  background: color-mix(in srgb, var(--mauve) 12%, transparent);
+}
+.palette-item-active::before {
+  background: var(--ink, #413f3d);
+}
+.palette-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 1.75rem;
+  width: 1.75rem;
+  border-radius: 9999px;
+  color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--mauve) 14%, transparent);
+  transition: background 160ms ease, color 160ms ease;
+}
+.palette-item-active .palette-item-icon {
+  color: var(--foreground);
+  background: color-mix(in srgb, var(--rose) 45%, transparent);
+}
+.palette-item:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+/* ============================================================
+   r9 — Dream lexicon cloud (Patterns view)
+   Frequency-scaled serif words; hover reveals the count and a
+   gentle lift. The words sit on a baseline rhythm so the cloud
+   reads like a poem, not a tag soup.
+   ============================================================ */
+.lexicon-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.35rem 0.9rem;
+  line-height: 1.5;
+}
+.lexicon-word {
+  position: relative;
+  font-family: var(--font-cormorant), Georgia, serif;
+  color: color-mix(in srgb, var(--ink, #413f3d) 78%, var(--mauve));
+  transition: color 180ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), text-shadow 220ms ease;
+  border-radius: 0.25rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0 0.15rem;
+  outline: none;
+}
+.lexicon-word:hover {
+  color: var(--ink, #413f3d);
+  transform: translateY(-2px);
+  text-shadow: 0 6px 14px color-mix(in srgb, var(--rose) 55%, transparent);
+}
+.lexicon-word:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.lexicon-word .lexicon-count {
+  position: absolute;
+  top: -0.75rem;
+  right: -0.4rem;
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.5rem;
+  letter-spacing: 0.06em;
+  color: var(--muted-foreground);
+  opacity: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+.lexicon-word:hover .lexicon-count,
+.lexicon-word:focus-visible .lexicon-count {
+  opacity: 1;
+}
+
+/* ============================================================
+   r9 — Weekly digest + records strip
+   Small editorial tiles with serif numerals and mono captions.
+   ============================================================ */
+.digest-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.digest-stat-value {
+  font-family: var(--font-cormorant), Georgia, serif;
+  font-size: 1.6rem;
+  line-height: 1.1;
+  color: var(--foreground);
+  /* hard guard: a long value can never push a mobile grid cell wider */
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.digest-stat-label {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
+  font-size: 0.575rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+.record-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 1.1rem 1.15rem;
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--mauve) 7%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mauve) 18%, transparent);
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 240ms ease,
+    border-color 240ms ease;
+}
+.record-tile:hover {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--mauve) 34%, transparent);
+  box-shadow: 0 12px 24px -16px rgba(65, 63, 61, 0.35);
+}
+
+

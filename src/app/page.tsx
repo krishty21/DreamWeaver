@@ -18,6 +18,7 @@ import { ArcadeView } from "@/components/views/arcade-view";
 import { ArcadeSessionView } from "@/components/views/arcade-session-view";
 import { ProfileView } from "@/components/views/profile-view";
 import { SharedDreamView } from "@/components/views/shared-dream-view";
+import { CommandPalette } from "@/components/shell/command-palette";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
@@ -38,18 +39,13 @@ export default function Home() {
 
   // Global keyboard shortcuts (only when authenticated).
   // C capture · J journal · P patterns · A arcade · T today · X atlas
-  // r7: Cmd/Ctrl+K opens capture from anywhere, even while typing — this is
-  // the wake-up use case, when every second matters before the dream fades.
+  // r9: Cmd/Ctrl+K now opens the command palette (fuzzy dream search + quick
+  // actions) — the palette registers its own global listener, so the handler
+  // here only covers the single-key navigation shortcuts.
   useEffect(() => {
     if (!authed) return;
     const onKey = (e: KeyboardEvent) => {
-      // Cmd/Ctrl+K → capture (works in any context, including inputs)
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        navigate("capture");
-        return;
-      }
-      // Single-key shortcuts below ignore modifier keys and require
+      // Single-key shortcuts ignore modifier keys and require
       // the focus NOT to be inside a text input.
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
@@ -101,6 +97,7 @@ export default function Home() {
       {/* The shared reflection is a standalone public page — it renders its
           own brand bar and footer, never the private app chrome. */}
       {authed && view !== "shared" && <TopNav />}
+      {authed && <CommandPalette />}
 
       <main className="relative z-10 flex-1 flex flex-col">
         {loading ? (

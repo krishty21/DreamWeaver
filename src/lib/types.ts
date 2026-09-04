@@ -157,6 +157,16 @@ export type AtlasEntry = MotifFrequency & {
   note?: string | null;
 };
 
+// r9: lexicon — the words the dreamer's own memory reaches for most often.
+// Computed app-side from raw dream texts (stopwords removed); the model is
+// never involved. `count` = total occurrences, `dreamCount` = how many
+// distinct dreams contain the word.
+export type LexiconWord = {
+  word: string;
+  count: number;
+  dreamCount: number;
+};
+
 export type PatternReport = {
   totalDreams: number;
   totalSessions: number;
@@ -170,4 +180,6 @@ export type PatternReport = {
   // r7 — exhaustive catalog used by the Atlas view
   atlas: AtlasEntry[];
   timeline: TimelinePoint[];
+  // r9 — word-frequency across raw dream texts (Patterns view lexicon cloud)
+  lexicon: LexiconWord[];
 };

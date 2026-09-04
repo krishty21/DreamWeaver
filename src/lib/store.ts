@@ -27,8 +27,16 @@ type AppState = {
   authMode: "signin" | "signup";
   arcadeMode: "replay" | "rewrite" | "confront";
   mounted: boolean;
+  // r9 — command palette (⌘K): fuzzy dream search + quick actions.
+  paletteOpen: boolean;
+  // r9 — one-shot prefill for the journal search (set by the lexicon cloud /
+  // palette; consumed and cleared by JournalView on mount).
+  journalQuery: string | null;
   navigate: (view: View, opts?: { dreamId?: string; sessionId?: string; shareToken?: string; authMode?: "signin" | "signup"; arcadeMode?: "replay" | "rewrite" | "confront"; journalDate?: string | null }) => void;
   syncFromHash: () => void;
+  openPalette: () => void;
+  closePalette: () => void;
+  setJournalQuery: (q: string | null) => void;
 };
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -75,6 +83,11 @@ export const useApp = create<AppState>((set, get) => ({
   authMode: "signin",
   arcadeMode: "replay",
   mounted: false,
+  paletteOpen: false,
+  journalQuery: null,
+  openPalette: () => set({ paletteOpen: true }),
+  closePalette: () => set({ paletteOpen: false }),
+  setJournalQuery: (q) => set({ journalQuery: q }),
   syncFromHash: () => {
     if (typeof window === "undefined") return;
     const parsed = parseHash();
