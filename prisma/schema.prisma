@@ -42,6 +42,9 @@ model Dream {
   shareToken       String?
   shareIncludeRaw  Boolean  @default(false) // opt-in: include the dreamer's own words
   sharedAt         DateTime?
+  // Optional expiry for the share link. When set and in the past, the public
+  // endpoint treats the link as closed (404 "expired"). Null = never expires.
+  shareExpiresAt   DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

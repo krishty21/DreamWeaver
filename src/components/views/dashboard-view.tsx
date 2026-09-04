@@ -129,7 +129,7 @@ export function DashboardView() {
       : "The night ahead has room for dreams.";
 
   return (
-    <div className="mx-auto max-w-6xl px-5 sm:px-8 py-10 sm:py-14">
+    <div className="mx-auto w-full max-w-6xl px-5 sm:px-8 py-10 sm:py-14">
       {/* hero greeting */}
       <motion.section
         initial={{ opacity: 0, y: 12 }}

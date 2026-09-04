@@ -204,7 +204,7 @@ export function CaptureView() {
   const progress = Math.min(1, elapsed / VOICE_MAX_SECONDS);
 
   return (
-    <div className="mx-auto max-w-3xl px-5 sm:px-8 py-10 sm:py-14">
+    <div className="mx-auto w-full max-w-3xl px-5 sm:px-8 py-10 sm:py-14">
       <button
         onClick={() => navigate("journal")}
         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition focus-ring mb-8"

@@ -3,11 +3,23 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, Sparkles, Compass, Inbox, FileDown } from "lucide-react";
+import {
+  ArrowLeft,
+  Loader2,
+  Sparkles,
+  Compass,
+  Inbox,
+  FileDown,
+  Search,
+  X,
+  CalendarDays,
+  MoonStar,
+} from "lucide-react";
 import { motion } from "framer-motion";
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildJournalMarkdown, downloadMarkdown } from "@/lib/journal-export";
 import { useToast } from "@/hooks/use-toast";
+import type { Mood } from "@/lib/types";
 
 async function fetchDreams() {
   const res = await fetch("/api/dreams");
@@ -15,12 +27,50 @@ async function fetchDreams() {
   return res.json();
 }
 
+// Editorial mood palette (mirrors the calendar + journal dots).
+const MOOD_COLORS: Record<Mood, string> = {
+  tense: "#413f3d",
+  melancholic: "#697184",
+  surreal: "#b1a6a4",
+  lucid: "#d8cfd0",
+  neutral: "#8a8580",
+};
+
+const MOODS: Mood[] = ["surreal", "tense", "melancholic", "lucid", "neutral"];
+
+function toDayKey(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
 export function JournalView() {
   const navigate = useApp((s) => s.navigate);
+  const journalDate = useApp((s) => s.journalDate);
   const { toast } = useToast();
   const { data, isLoading } = useQuery({ queryKey: ["dreams"], queryFn: fetchDreams });
 
+  const [query, setQuery] = useState("");
+  const [moodFilter, setMoodFilter] = useState<Mood | "all">("all");
+  const searchRef = useRef<HTMLInputElement>(null);
+
   const dreams: any[] = data?.dreams ?? [];
+
+  // "/" focuses the journal search — a small editor's delight.
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      const el = document.activeElement;
+      const typing =
+        el instanceof HTMLInputElement ||
+        el instanceof HTMLTextAreaElement ||
+        (el as HTMLElement | null)?.isContentEditable;
+      if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        e.preventDefault();
+        searchRef.current?.focus();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   function onExport() {
     if (dreams.length === 0) return;
@@ -37,20 +87,65 @@ export function JournalView() {
     }
   }
 
+  const moodCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const d of dreams) {
+      const m = d.mood || "neutral";
+      counts.set(m, (counts.get(m) ?? 0) + 1);
+    }
+    return counts;
+  }, [dreams]);
+
+  // Search + mood + day filtering. Search looks across everything the dreamer
+  // wrote and everything the reflection surfaced (title, summary, raw text,
+  // motifs, symbols) — one field, the whole night, findable.
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return dreams.filter((d) => {
+      if (journalDate && toDayKey(d.createdAt) !== journalDate) return false;
+      if (moodFilter !== "all" && (d.mood || "neutral") !== moodFilter) return false;
+      if (!q) return true;
+      const a = d.analysis;
+      const haystack = [
+        d.title ?? "",
+        d.rawText ?? "",
+        a?.summary ?? "",
+        ...safeParse(a?.motifsJson).map((m: any) => m.label ?? ""),
+        ...safeParse(a?.symbolsJson).map((s: any) => s.label ?? ""),
+        ...safeParse(a?.peopleJson).map((p: any) => p.name ?? ""),
+        ...safeParse(a?.locationsJson).map((l: any) => l.label ?? ""),
+      ]
+        .join(" \n ")
+        .toLowerCase();
+      return haystack.includes(q);
+    });
+  }, [dreams, query, moodFilter, journalDate]);
+
+  const filtering = query.trim() !== "" || moodFilter !== "all" || journalDate !== null;
+
   // group by month for an editorial reading rhythm
   const groups = useMemo(() => {
     const map = new Map<string, any[]>();
-    for (const d of dreams) {
+    for (const d of filtered) {
       const date = new Date(d.createdAt);
       const key = date.toLocaleDateString(undefined, { year: "numeric", month: "long" });
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(d);
     }
     return Array.from(map.entries());
-  }, [dreams]);
+  }, [filtered]);
+
+  const dayLabel = journalDate
+    ? new Date(journalDate + "T12:00:00").toLocaleDateString(undefined, {
+        weekday: "long",
+        month: "long",
+        day: "numeric",
+        year: "numeric",
+      })
+    : null;
 
   return (
-    <div className="mx-auto max-w-5xl px-5 sm:px-8 py-10 sm:py-14">
+    <div className="mx-auto w-full max-w-5xl px-5 sm:px-8 py-10 sm:py-14">
       <div className="flex items-center justify-between gap-3 mb-8">
         <div>
           <div className="text-xs tracking-caps uppercase text-muted-foreground mb-2">
@@ -82,12 +177,128 @@ export function JournalView() {
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center py-20">
-          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      {/* ——— search & filters ——— */}
+      {dreams.length > 0 && (
+        <div className="mb-8">
+          <div className="relative">
+            <Search
+              className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+              strokeWidth={1.6}
+              aria-hidden="true"
+            />
+            <input
+              ref={searchRef}
+              type="search"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search your nights — a word, a feeling, a figure"
+              aria-label="Search dreams by any word in the memory or reflection"
+              className="w-full h-12 pl-10 pr-24 rounded-xl bg-card border border-border shadow-sm
+                         text-sm text-foreground placeholder:text-muted-foreground/70
+                         focus:outline-none focus:ring-2 focus:ring-foreground/20 focus:border-foreground/30
+                         transition [&::-webkit-search-cancel-button]:hidden"
+            />
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {query ? (
+                <button
+                  onClick={() => {
+                    setQuery("");
+                    searchRef.current?.focus();
+                  }}
+                  className="inline-flex h-6 w-6 items-center justify-center rounded-full text-muted-foreground hover:text-foreground hover:bg-accent transition focus-ring"
+                  aria-label="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" strokeWidth={1.8} />
+                </button>
+              ) : (
+                <kbd className="hidden sm:inline-flex h-5 min-w-5 items-center justify-center px-1.5 rounded border border-border bg-background text-[10px] font-data text-muted-foreground">
+                  /
+                </kbd>
+              )}
+            </div>
+          </div>
+
+          {/* mood chips */}
+          <div className="mt-3 flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filter by mood">
+            <FilterChip
+              active={moodFilter === "all"}
+              onClick={() => setMoodFilter("all")}
+              label="All"
+              count={dreams.length}
+              color={null}
+            />
+            {MOODS.filter((m) => (moodCounts.get(m) ?? 0) > 0).map((m) => (
+              <FilterChip
+                key={m}
+                active={moodFilter === m}
+                onClick={() => setMoodFilter(moodFilter === m ? "all" : m)}
+                label={m}
+                count={moodCounts.get(m) ?? 0}
+                color={MOOD_COLORS[m]}
+              />
+            ))}
+          </div>
         </div>
+      )}
+
+      {/* ——— calendar day drill-down banner ——— */}
+      {journalDate && (
+        <motion.div
+          initial={{ opacity: 0, y: -6 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="surface-quiet p-4 sm:p-5 mb-8 flex items-center gap-4"
+          role="region"
+          aria-label={`Journal filtered to ${dayLabel}`}
+        >
+          <div className="h-10 w-10 shrink-0 rounded-full bg-foreground/[0.05] flex items-center justify-center">
+            <CalendarDays className="h-5 w-5 text-muted-foreground" strokeWidth={1.5} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs tracking-caps uppercase text-muted-foreground">
+              One night, opened from the calendar
+            </div>
+            <div className="font-display text-xl sm:text-2xl tracking-tight truncate">
+              {dayLabel}
+            </div>
+          </div>
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="font-data text-xs text-muted-foreground hidden sm:inline">
+              {filtered.length} dream{filtered.length === 1 ? "" : "s"}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9"
+              onClick={() => navigate("journal")}
+            >
+              <ArrowLeft className="h-4 w-4" strokeWidth={1.6} />
+              <span className="sr-only sm:not-sr-only sm:ml-1.5">All dreams</span>
+            </Button>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ——— results meta ——— */}
+      {dreams.length > 0 && filtering && (
+        <div className="mb-6 text-xs text-muted-foreground/80 pretty" aria-live="polite">
+          Showing <span className="font-data text-foreground/80">{filtered.length}</span> of{" "}
+          <span className="font-data">{dreams.length}</span> recorded dream
+          {dreams.length === 1 ? "" : "s"}.
+        </div>
+      )}
+
+      {isLoading ? (
+        <JournalSkeleton />
       ) : dreams.length === 0 ? (
         <EmptyJournal onCapture={() => navigate("capture")} />
+      ) : filtered.length === 0 ? (
+        <EmptySearch
+          onClear={() => {
+            setQuery("");
+            setMoodFilter("all");
+            if (journalDate) navigate("journal");
+          }}
+        />
       ) : (
         <div className="space-y-12">
           {groups.map(([month, items]) => (
@@ -106,7 +317,106 @@ export function JournalView() {
           ))}
         </div>
       )}
+
+      <p className="mt-12 text-center text-xs text-muted-foreground/70 pretty">
+        <MoonStar className="inline h-3.5 w-3.5 -translate-y-px mr-1" strokeWidth={1.5} aria-hidden="true" />
+        Every search runs against your words and your reflections — never anyone else&rsquo;s.
+      </p>
     </div>
+  );
+}
+
+function FilterChip({
+  active,
+  onClick,
+  label,
+  count,
+  color,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+  count: number;
+  color: string | null;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={active}
+      className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full border text-xs transition focus-ring
+                 aria-pressed:border-foreground aria-pressed:bg-foreground aria-pressed:text-background aria-pressed:shadow-sm
+                 border-border bg-card text-muted-foreground hover:border-foreground/25 hover:text-foreground"
+    >
+      {color && (
+        <span
+          className="h-2 w-2 rounded-full"
+          style={{
+            background: color,
+            opacity: active ? 1 : 0.75,
+            // light ring keeps the mood colour visible on the dark active fill
+            boxShadow: active ? "0 0 0 1.5px rgba(242,241,239,0.55)" : undefined,
+          }}
+          aria-hidden="true"
+        />
+      )}
+      {label}
+      <span className="font-data text-[10px] opacity-70">{count}</span>
+    </button>
+  );
+}
+
+function JournalSkeleton() {
+  // Shimmering placeholders — the journal is "being unwrapped" while it loads.
+  return (
+    <div className="space-y-10" aria-hidden="true">
+      {[0, 1].map((row) => (
+        <div key={row}>
+          <div className="flex items-center gap-3 mb-5">
+            <div className="shimmer-line h-6 w-32 rounded-md" />
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {[0, 1].map((i) => (
+              <div key={i} className="surface p-5 space-y-3">
+                <div className="shimmer-line h-3 w-24 rounded" />
+                <div className="shimmer-line h-6 w-3/4 rounded" />
+                <div className="shimmer-line h-3 w-full rounded" />
+                <div className="shimmer-line h-3 w-2/3 rounded" />
+                <div className="flex gap-1.5 pt-2">
+                  <div className="shimmer-line h-5 w-16 rounded-full" />
+                  <div className="shimmer-line h-5 w-12 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function EmptySearch({ onClear }: { onClear: () => void }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="surface p-12 text-center"
+    >
+      <div className="inline-flex h-14 w-14 items-center justify-center rounded-full bg-foreground/[0.05] mb-4">
+        <Search className="h-6 w-6 text-muted-foreground" strokeWidth={1.4} />
+      </div>
+      <h3 className="font-display text-3xl tracking-display balance">
+        No dreams match — yet.
+      </h3>
+      <p className="mt-2 text-sm text-muted-foreground pretty max-w-md mx-auto">
+        Memory is slippery. Try a shorter word, a mood instead of a phrase, or open the
+        whole journal again.
+      </p>
+      <Button onClick={onClear} variant="outline" className="mt-6 h-11 px-6">
+        <X className="h-4 w-4" strokeWidth={1.6} />
+        Clear the search
+      </Button>
+    </motion.div>
   );
 }
 
@@ -124,16 +434,7 @@ function DreamCard({
   const a = dream.analysis;
   const motifs: string[] = a ? safeParse(a.motifsJson).slice(0, 4).map((m: any) => m.label) : [];
   const mood = dream.mood || "neutral";
-  const moodColor =
-    mood === "tense"
-      ? "#413f3d"
-      : mood === "melancholic"
-      ? "#697184"
-      : mood === "surreal"
-      ? "#b1a6a4"
-      : mood === "lucid"
-      ? "#d8cfd0"
-      : "#8a8580";
+  const moodColor = MOOD_COLORS[mood as Mood] ?? MOOD_COLORS.neutral;
 
   return (
     <motion.article

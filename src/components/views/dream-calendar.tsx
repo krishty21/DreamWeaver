@@ -8,6 +8,7 @@
 import { useMemo } from "react";
 import { motion } from "framer-motion";
 import type { CalendarDay, Mood } from "@/lib/types";
+import { useApp } from "@/lib/store";
 
 // Editorial mood palette (matches the app's design system).
 const MOOD_COLORS: Record<Mood, string> = {
@@ -26,6 +27,7 @@ function toKey(d: Date): string {
 
 export function DreamCalendar({ days }: { days: CalendarDay[] }) {
   const byDate = useMemo(() => new Map(days.map((d) => [d.date, d])), [days]);
+  const navigate = useApp((s) => s.navigate);
 
   // Build a grid: columns = weeks ending this week, rows = Mon..Sun.
   const { weeks, monthLabels, activeCells, nightsInRange } = useMemo(() => {
@@ -87,6 +89,11 @@ export function DreamCalendar({ days }: { days: CalendarDay[] }) {
         <h2 className="font-display text-2xl tracking-tight">Nights remembered</h2>
         <span className="font-data text-xs text-muted-foreground">
           {nightsInRange} night{nightsInRange === 1 ? "" : "s"} · last {WEEKS} weeks
+          {activeCells > 0 && (
+            <span className="ml-2 pl-2 border-l border-border/80 hidden sm:inline">
+              click a night to open its dreams
+            </span>
+          )}
         </span>
       </div>
 
@@ -138,12 +145,28 @@ export function DreamCalendar({ days }: { days: CalendarDay[] }) {
                       key={key}
                       initial={{ opacity: 0, scale: 0.6 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      whileHover={{ scale: 1.45 }}
+                      whileHover={entry ? { scale: 1.45 } : undefined}
                       transition={{ delay: Math.min((w * 7 + d) * 0.004, 0.6), duration: 0.3 }}
                       title={tooltip}
                       aria-label={tooltip}
-                      role="img"
-                      className="h-[13px] w-[13px] rounded-[3px] relative z-0 hover:z-10"
+                      role={entry ? "button" : "img"}
+                      tabIndex={entry ? 0 : -1}
+                      onClick={
+                        entry && !isFuture
+                          ? () => navigate("journal", { journalDate: key })
+                          : undefined
+                      }
+                      onKeyDown={
+                        entry && !isFuture
+                          ? (e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                navigate("journal", { journalDate: key });
+                              }
+                            }
+                          : undefined
+                      }
+                      className="h-[13px] w-[13px] rounded-[3px] relative z-0 hover:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-foreground"
                       style={{
                         background: color
                           ? color
@@ -153,7 +176,7 @@ export function DreamCalendar({ days }: { days: CalendarDay[] }) {
                         opacity: isFuture ? 0 : entry ? intensity : 0.32,
                         outline: isToday ? "1.5px solid var(--foreground)" : "none",
                         outlineOffset: isToday ? "1px" : "0",
-                        cursor: "default",
+                        cursor: entry && !isFuture ? "pointer" : "default",
                       }}
                     />
                   );

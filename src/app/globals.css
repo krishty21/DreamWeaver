@@ -179,6 +179,8 @@
   inset: 0;
   z-index: 0;
   pointer-events: none;
+  /* Orbs drift past the viewport edges — clip so they never widen the page. */
+  overflow: hidden;
   background:
     radial-gradient(60rem 40rem at 12% -10%, rgba(216, 207, 208, 0.55), transparent 60%),
     radial-gradient(50rem 36rem at 110% 0%, rgba(177, 166, 164, 0.35), transparent 55%),
@@ -268,6 +270,8 @@
   font-size: 0.72rem;
   letter-spacing: 0.04em;
   border: 1px solid color-mix(in srgb, var(--mauve) 40%, transparent);
+  /* never let a long chip force the page wider than its container */
+  max-width: 100%;
 }
 
 /* State meter used in the arcade */

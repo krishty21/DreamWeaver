@@ -14,6 +14,7 @@ import {
   Eye,
   Lock,
   Compass,
+  Hourglass,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import type { Emotion, Interpretation, LabeledItem } from "@/lib/types";
@@ -24,7 +25,18 @@ import type { Emotion, Interpretation, LabeledItem } from "@/lib/types";
 
 async function fetchShared(token: string) {
   const res = await fetch(`/api/shared/${token}`);
-  if (!res.ok) throw new Error(res.status === 404 ? "not found" : "failed");
+  if (!res.ok) {
+    // Distinguish "the dreamer closed this window" from "never existed" —
+    // both 404, but the body carries an `error` code.
+    let code = "not found";
+    try {
+      const body = await res.json();
+      if (body?.error === "expired") code = "expired";
+    } catch {
+      /* keep default */
+    }
+    throw new Error(code);
+  }
   return res.json();
 }
 
@@ -75,13 +87,20 @@ export function SharedDreamView() {
       ) : error || !data?.shared ? (
         <div className="flex-1 flex items-center justify-center px-6 py-28">
           <div className="text-center max-w-md">
-            <MoonStar className="h-8 w-8 mx-auto text-muted-foreground" strokeWidth={1.4} />
+            {error?.message === "expired" ? (
+              <Hourglass className="h-8 w-8 mx-auto text-muted-foreground" strokeWidth={1.4} />
+            ) : (
+              <MoonStar className="h-8 w-8 mx-auto text-muted-foreground" strokeWidth={1.4} />
+            )}
             <h1 className="mt-5 font-display text-4xl tracking-display balance">
-              This reflection is no longer shared.
+              {error?.message === "expired"
+                ? "This window has closed."
+                : "This reflection is no longer shared."}
             </h1>
             <p className="mt-3 text-sm text-muted-foreground pretty">
-              The dreamer may have revoked the link, or it never existed. The dream itself stays
-              private, wherever it is.
+              {error?.message === "expired"
+                ? "The dreamer set this link to expire, and its time has passed. The reflection returns to private memory."
+                : "The dreamer may have revoked the link, or it never existed. The dream itself stays private, wherever it is."}
             </p>
             <button
               onClick={() => navigate("landing")}
@@ -121,6 +140,15 @@ function SharedBody({ shared }: { shared: any }) {
         day: "numeric",
       })
     : null;
+  // If the dreamer armed an expiry, readers deserve to know the window closes.
+  const expiresOn = shared.expiresAt
+    ? (() => {
+        const d = new Date(shared.expiresAt);
+        return Number.isNaN(d.getTime())
+          ? null
+          : d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+      })()
+    : null;
 
   return (
     <motion.article
@@ -155,6 +183,7 @@ function SharedBody({ shared }: { shared: any }) {
         {sharedOn && (
           <p className="mt-1 text-[11px] text-muted-foreground font-data">
             shared {sharedOn} · read-only link
+            {expiresOn && ` · closes ${expiresOn}`}
           </p>
         )}
       </motion.div>

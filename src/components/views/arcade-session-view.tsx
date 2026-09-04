@@ -123,7 +123,7 @@ export function ArcadeSessionView() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-5 sm:px-8 py-8 sm:py-12">
+    <div className="mx-auto w-full max-w-4xl px-5 sm:px-8 py-8 sm:py-12">
       <button
         onClick={() => navigate("arcade")}
         className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition focus-ring mb-6"

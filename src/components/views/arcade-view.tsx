@@ -43,7 +43,7 @@ export function ArcadeView() {
   const startDream = dreams.find((d) => d.id === dreamId) ?? (dreamId ? { id: dreamId, title: "Opening the dream…", analysis: null, rawText: "", motifs: [] } : null);
 
   return (
-    <div className="mx-auto max-w-6xl px-5 sm:px-8 py-10 sm:py-14">
+    <div className="mx-auto w-full max-w-6xl px-5 sm:px-8 py-10 sm:py-14">
       {startDream ? (
         <StartPanel dream={startDream} loading={dreamsLoading && !dreamsData} onBack={() => navigate("arcade")} />
       ) : (

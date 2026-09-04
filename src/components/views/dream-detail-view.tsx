@@ -23,6 +23,7 @@ import {
   Link2Off,
   MoonStar,
   FileDown,
+  Hourglass,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -79,21 +80,27 @@ export function DreamDetailView() {
       ? `${window.location.origin}/#/shared/${shareToken}`
       : "";
 
-  async function onShare(includeRaw?: boolean) {
+  async function onShare(opts?: { includeRaw?: boolean; expiresInDays?: number | null }) {
     if (!dream || shareBusy) return;
     setShareBusy(true);
     try {
       const res = await fetch(`/api/dreams/${dream.id}/share`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          includeRaw === undefined ? {} : { includeRaw }
-        ),
+        body: JSON.stringify(opts ?? {}),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "The share link could not be created.");
       await qc.invalidateQueries({ queryKey: ["dream", dream.id] });
-      if (includeRaw === undefined) {
+      if (opts?.expiresInDays !== undefined) {
+        toast({
+          title: "Link window updated",
+          description:
+            opts.expiresInDays === null
+              ? "The link now stays open until you revoke it."
+              : `The link will close in ${opts.expiresInDays} day${opts.expiresInDays === 1 ? "" : "s"}.`,
+        });
+      } else if (opts?.includeRaw === undefined) {
         toast({
           title: "Reflection shared",
           description: "A read-only link has been created. Your raw memory stays private.",
@@ -167,8 +174,8 @@ export function DreamDetailView() {
   }
 
   return (
-    <div className="mx-auto max-w-4xl px-5 sm:px-8 py-10 sm:py-14">
-      <div className="flex items-center justify-between gap-3 mb-8">
+    <div className="mx-auto w-full max-w-4xl px-5 sm:px-8 py-10 sm:py-14">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 mb-8">
         <button
           onClick={() => navigate("journal")}
           className="inline-flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition focus-ring"
@@ -176,7 +183,7 @@ export function DreamDetailView() {
           <ArrowLeft className="h-4 w-4" strokeWidth={1.6} />
           Journal
         </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 ml-auto">
           <Button
             onClick={() => navigate("arcade", { dreamId: dream.id })}
             className="h-9 bg-foreground text-background hover:opacity-90"
@@ -250,8 +257,10 @@ export function DreamDetailView() {
           url={shareUrl}
           includeRaw={!!dream.shareIncludeRaw}
           sharedAt={dream.sharedAt}
+          expiresAt={dream.shareExpiresAt ?? null}
           busy={shareBusy}
-          onToggleRaw={(v) => onShare(v)}
+          onToggleRaw={(v) => onShare({ includeRaw: v })}
+          onSetExpiry={(days) => onShare({ expiresInDays: days })}
           onRevoke={onRevokeShare}
           onPreview={() => navigate("shared", { shareToken })}
         />
@@ -325,13 +334,13 @@ export function DreamDetailView() {
                 {a.relationships.map((r, i) => (
                   <span
                     key={i}
-                    className="surface-quiet px-3.5 py-2 inline-flex items-center gap-2 text-sm"
+                    className="surface-quiet px-3.5 py-2 inline-flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm max-w-full"
                   >
-                    <span className="text-foreground">{r.from}</span>
+                    <span className="text-foreground min-w-0">{r.from}</span>
                     <span className="text-[10px] tracking-caps uppercase text-muted-foreground border-b border-border pb-0.5">
                       {r.relation}
                     </span>
-                    <span className="text-foreground">{r.to}</span>
+                    <span className="text-foreground min-w-0">{r.to}</span>
                   </span>
                 ))}
               </div>
@@ -417,16 +426,20 @@ function SharePanel({
   url,
   includeRaw,
   sharedAt,
+  expiresAt,
   busy,
   onToggleRaw,
+  onSetExpiry,
   onRevoke,
   onPreview,
 }: {
   url: string;
   includeRaw: boolean;
   sharedAt: string | null;
+  expiresAt: string | null;
   busy: boolean;
   onToggleRaw: (v: boolean) => void;
+  onSetExpiry: (days: number | null) => void;
   onRevoke: () => void;
   onPreview: () => void;
 }) {
@@ -449,6 +462,21 @@ function SharePanel({
 
   const shared = sharedAt ? new Date(sharedAt).toLocaleDateString() : null;
 
+  const expiryDate = expiresAt ? new Date(expiresAt) : null;
+  const isExpired = !!expiryDate && expiryDate.getTime() < Date.now();
+  const daysLeft = expiryDate
+    ? Math.ceil((expiryDate.getTime() - Date.now()) / (24 * 60 * 60 * 1000))
+    : null;
+  const expiryLabel = !expiryDate
+    ? "never"
+    : isExpired
+    ? "expired"
+    : daysLeft !== null && daysLeft <= 1
+    ? "last day"
+    : `${daysLeft} day${daysLeft === 1 ? "" : "s"} left`;
+  const currentWindow: "never" | "7" | "30" =
+    !expiryDate ? "never" : isExpired ? "7" : (daysLeft ?? 0) > 22 ? "30" : "7";
+
   return (
     <motion.div
       initial={{ opacity: 0, y: -6 }}
@@ -464,8 +492,17 @@ function SharePanel({
             <MoonStar className="h-3.5 w-3.5" strokeWidth={1.6} />
             Public read-only link
             {shared && <span className="normal-case tracking-normal">· since {shared}</span>}
+            <span
+              className={`normal-case tracking-normal inline-flex items-center gap-1 ${
+                isExpired ? "text-destructive" : ""
+              }`}
+            >
+              ·{" "}
+              <Hourglass className="h-3 w-3" strokeWidth={1.7} aria-hidden="true" />
+              {isExpired ? "expired — renew or revoke" : expiryLabel}
+            </span>
           </div>
-          <div className="mt-2 flex items-center gap-2">
+          <div className={`mt-2 flex items-center gap-2 ${isExpired ? "opacity-60" : ""}`}>
             <code className="share-url text-xs sm:text-sm px-3 py-2 bg-background/70 border border-border rounded-md truncate flex-1 min-w-0" title={url}>
               {url || "…"}
             </code>
@@ -474,6 +511,11 @@ function SharePanel({
               <span className="sr-only sm:not-sr-only sm:ml-1.5">{copied ? "Copied" : "Copy"}</span>
             </Button>
           </div>
+          {isExpired && (
+            <p className="mt-1.5 text-[11px] text-destructive/90 pretty">
+              This window has passed — visitors see a closed page. Choose a new window below to re-open it.
+            </p>
+          )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
           <Button size="sm" variant="outline" className="h-9" onClick={onPreview}>
@@ -493,7 +535,7 @@ function SharePanel({
         </div>
       </div>
 
-      <div className="mt-4 pt-4 border-t border-border/60 flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
+      <div className="mt-4 pt-4 border-t border-border/60 grid gap-4 sm:grid-cols-2 sm:gap-6">
         <div>
           <label htmlFor="include-raw" className="text-sm text-foreground flex items-center gap-2">
             Include my dream words in the public page
@@ -501,14 +543,53 @@ function SharePanel({
           <p className="text-[11px] text-muted-foreground mt-0.5 pretty">
             Off by default — the shared page shows the reflection only, never your raw memory.
           </p>
+          <div className="mt-2.5">
+            <Switch
+              id="include-raw"
+              checked={includeRaw}
+              disabled={busy}
+              onCheckedChange={onToggleRaw}
+              aria-label="Include the raw dream text in the shared page"
+            />
+          </div>
         </div>
-        <Switch
-          id="include-raw"
-          checked={includeRaw}
-          disabled={busy}
-          onCheckedChange={onToggleRaw}
-          aria-label="Include the raw dream text in the shared page"
-        />
+        <div>
+          <span id="share-expiry-label" className="text-sm text-foreground flex items-center gap-2">
+            How long may the link stay open?
+          </span>
+          <p className="text-[11px] text-muted-foreground mt-0.5 pretty">
+            A shorter window is kinder to your future self — you can always re-open it.
+          </p>
+          <div
+            className="mt-2.5 inline-flex items-center rounded-full border border-border bg-card p-0.5"
+            role="group"
+            aria-labelledby="share-expiry-label"
+          >
+            {([
+              { v: "7", label: "7 days" },
+              { v: "30", label: "30 days" },
+              { v: "never", label: "Forever" },
+            ] as const).map((opt) => {
+              const active = currentWindow === opt.v;
+              return (
+                <button
+                  key={opt.v}
+                  type="button"
+                  disabled={busy}
+                  aria-pressed={active}
+                  onClick={() => onSetExpiry(opt.v === "never" ? null : Number(opt.v))}
+                  className={`px-3 h-8 rounded-full text-xs transition focus-ring ${
+                    active
+                      ? "bg-foreground text-background shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </motion.div>
   );
@@ -577,11 +658,15 @@ function ItemGroup({
       ) : (
         <div className="flex flex-wrap gap-2">
           {items.map((it, i) => (
-            <span key={i} className="chip">
-              {it.label}
-              {it.note && <span className="text-muted-foreground">· {it.note}</span>}
+            <span key={i} className="chip max-w-full">
+              {/* label + note in one wrapping flow so long notes never force the
+                  page wide on mobile; confidence glyph stays pinned at the end */}
+              <span className="min-w-0">
+                {it.label}
+                {it.note && <span className="text-muted-foreground">· {it.note}</span>}
+              </span>
               {it.confidence !== undefined && (
-                <span className="text-muted-foreground/70 font-data text-[10px]" title={`AI confidence ${(it.confidence * 100).toFixed(0)}%`}>
+                <span className="text-muted-foreground/70 font-data text-[10px] shrink-0" title={`AI confidence ${(it.confidence * 100).toFixed(0)}%`}>
                   {it.confidence < 0.4 ? "?" : it.confidence > 0.7 ? "●" : "◐"}
                 </span>
               )}
