@@ -505,3 +505,259 @@ function clampDelta(d: any): ProposedDelta {
   if (typeof d.reasoning === "string") out.reasoning = String(d.reasoning).slice(0, 400);
   return out;
 }
+
+// ---------- Streaming arcade turn (r6) ----------
+//
+// Streams the model's sceneText to the client as it is produced. The SDK
+// returns the raw fetch Response.body (a ReadableStream) when stream:true
+// is requested AND the server responds with text/event-stream; otherwise it
+// returns the parsed JSON (we fall back to a single delta emit).
+//
+// The model emits the response as a JSON object whose first field is
+// `sceneText`. As chunks arrive we incrementally extract the partial
+// sceneText from the partial JSON buffer (handling escapes) and emit each
+// newly-completed slice via onDelta. The complete JSON is parsed at end
+// and the structured response returned, exactly like generateArcadeTurn.
+
+function buildArcadeResponse(safe: z.infer<typeof turnSchema>): ArcadeTurnResponse {
+  return {
+    sceneText: String(safe.sceneText).slice(0, 2000),
+    choices: safe.choices.map((c, i) => ({
+      id: c.id || `choice-${i + 1}`,
+      label: String(c.label).slice(0, 120),
+      hint: c.hint ? String(c.hint).slice(0, 200) : undefined,
+    })),
+    proposedDelta: clampDelta(safe.proposedDelta),
+    discoveredMotifs: (safe.proposedDelta.discoveredMotifs || [])
+      .map((s) => String(s).slice(0, 60).toLowerCase())
+      .slice(0, 8),
+  };
+}
+
+// Extract the partial sceneText value from a partial JSON buffer.
+// Returns { text, complete } where complete=true if the closing quote was seen.
+function extractPartialSceneText(buffer: string): { text: string; complete: boolean } {
+  const key = `"sceneText"`;
+  const idx = buffer.indexOf(key);
+  if (idx === -1) return { text: "", complete: false };
+
+  // skip whitespace
+  let i = idx + key.length;
+  while (i < buffer.length && /\s/.test(buffer[i])) i++;
+  if (i >= buffer.length || buffer[i] !== ":") return { text: "", complete: false };
+  i++;
+  while (i < buffer.length && /\s/.test(buffer[i])) i++;
+  if (i >= buffer.length) return { text: "", complete: false };
+  if (buffer[i] !== '"') return { text: "", complete: false };
+
+  // string content
+  i++;
+  let out = "";
+  let complete = false;
+  while (i < buffer.length) {
+    const ch = buffer[i];
+    if (ch === "\\") {
+      if (i + 1 >= buffer.length) break;
+      const next = buffer[i + 1];
+      if (next === "n") out += "\n";
+      else if (next === "t") out += "\t";
+      else if (next === "r") out += "\r";
+      else if (next === '"') out += '"';
+      else if (next === "\\") out += "\\";
+      else if (next === "/") out += "/";
+      else if (next === "b") out += "\b";
+      else if (next === "f") out += "\f";
+      else if (next === "u") {
+        if (i + 5 >= buffer.length) break;
+        const hex = buffer.slice(i + 2, i + 6);
+        try {
+          out += String.fromCharCode(parseInt(hex, 16));
+          i += 4;
+        } catch {
+          out += next;
+        }
+      } else {
+        out += next;
+      }
+      i += 2;
+    } else if (ch === '"') {
+      complete = true;
+      break;
+    } else {
+      out += ch;
+      i++;
+    }
+  }
+  return { text: out, complete };
+}
+
+// Parse an SSE stream (text/event-stream) and yield content deltas.
+// Tolerates \n\n and \r\n\r\n separators; ignores keep-alive lines.
+async function* parseSSEStream(
+  stream: ReadableStream<Uint8Array> | NodeJS.ReadableStream | any
+): AsyncGenerator<string> {
+  const reader = (stream as any).getReader?.();
+  if (!reader) {
+    // Node stream fallback
+    const iter = (stream as any)[Symbol.asyncIterator]?.();
+    if (iter) {
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await iter.next();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buffer.indexOf("\n\n")) !== -1) {
+          const chunk = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          for (const line of chunk.split("\n")) {
+            const m = line.match(/^data:\s?(.*)$/);
+            if (!m) continue;
+            const data = m[1];
+            if (data === "[DONE]") return;
+            try {
+              const json = JSON.parse(data);
+              const delta = json?.choices?.[0]?.delta?.content;
+              if (typeof delta === "string" && delta) yield delta;
+            } catch {
+              // skip malformed
+            }
+          }
+        }
+      }
+    }
+    return;
+  }
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+      const chunk = buffer.slice(0, idx);
+      buffer = buffer.slice(idx + 2);
+      for (const line of chunk.split("\n")) {
+        const m = line.match(/^data:\s?(.*)$/);
+        if (!m) continue;
+        const data = m[1];
+        if (data === "[DONE]") return;
+        try {
+          const json = JSON.parse(data);
+          const delta = json?.choices?.[0]?.delta?.content;
+          if (typeof delta === "string" && delta) yield delta;
+        } catch {
+          // skip malformed
+        }
+      }
+    }
+  }
+}
+
+export async function generateArcadeTurnStreaming(
+  opts: {
+    mode: ArcadeMode;
+    dream: { rawText: string; analysis: any };
+    state: SimulationState;
+    history: { userAction: string; sceneText: string }[];
+    userAction: string;
+    dreamMotifs: string[];
+  },
+  onDelta: (delta: string) => void
+): Promise<{ response: ArcadeTurnResponse; raw: string }> {
+  const prompt = ARCADE_SYSTEM_PROMPT(opts);
+  const client = await zai();
+
+  let raw = "";
+  try {
+    const completion = await client.chat.completions.create({
+      messages: [
+        { role: "assistant", content: prompt.system },
+        { role: "user", content: prompt.user },
+      ],
+      stream: true,
+      thinking: { type: "disabled" },
+    });
+
+    // The SDK returns response.body (ReadableStream) when stream:true and
+    // text/event-stream; otherwise returns parsed JSON.
+    const stream =
+      completion && (completion.body instanceof ReadableStream
+        ? completion.body
+        : completion instanceof ReadableStream
+        ? completion
+        : null);
+
+    if (stream) {
+      let sentText = "";
+      for await (const delta of parseSSEStream(stream)) {
+        raw += delta;
+        const { text } = extractPartialSceneText(raw);
+        if (text.length > sentText.length) {
+          // emit only the newly completed slice
+          onDelta(text.slice(sentText.length));
+          sentText = text;
+        }
+      }
+    } else {
+      // non-streaming fallback (server didn't honour stream:true)
+      raw = completion?.choices?.[0]?.message?.content ?? "";
+      const { text } = extractPartialSceneText(raw);
+      if (text) onDelta(text);
+    }
+  } catch (e) {
+    console.warn("[ai] arcade streaming turn failed:", e);
+    throw e;
+  }
+
+  let parsed = extractJSON(raw);
+  if (!parsed) {
+    // One repair attempt with non-streaming
+    console.warn("[ai] streaming arcade turn JSON unparseable — retrying once. head:", brief(raw));
+    try {
+      const retry = await client.chat.completions.create({
+        messages: [
+          { role: "assistant", content: prompt.system },
+          { role: "user", content: prompt.user },
+          { role: "assistant", content: raw.slice(0, 6000) },
+          {
+            role: "user",
+            content:
+              "Your previous response was not valid JSON. Return ONLY the JSON object matching the schema — no prose, no code fences. Keep sceneText vivid but finish the object.",
+          },
+        ],
+        thinking: { type: "disabled" },
+      });
+      raw = retry?.choices?.[0]?.message?.content ?? "";
+      parsed = extractJSON(raw);
+      if (parsed) {
+        // emit the repaired sceneText in one chunk so the client catches up
+        const { text } = extractPartialSceneText(raw);
+        if (text) onDelta(text);
+      }
+    } catch (e) {
+      console.warn("[ai] streaming arcade turn repair attempt failed:", e);
+    }
+  }
+  if (!parsed) {
+    console.warn("[ai] streaming arcade turn fallback engaged. head:", brief(raw));
+    const fallback: ArcadeTurnResponse = {
+      sceneText:
+        "The dream stutters for a moment — the scene is still forming. Try describing what you do next.",
+      choices: [
+        { id: "continue", label: "Press onward into the dream", hint: "Move deeper" },
+        { id: "observe", label: "Pause and observe your surroundings" },
+      ],
+      proposedDelta: { reasoning: "Model response was malformed; no state change applied." },
+      discoveredMotifs: [],
+    };
+    onDelta(fallback.sceneText);
+    return { response: fallback, raw };
+  }
+
+  const safe = turnSchema.parse(parsed);
+  const response = buildArcadeResponse(safe);
+  return { response, raw };
+}

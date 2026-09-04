@@ -3,8 +3,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map as MapIcon, ArrowRight, TrendingUp, Gamepad2, CalendarCheck2, BookOpenText } from "lucide-react";
+import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map as MapIcon, ArrowRight, TrendingUp, Gamepad2, CalendarCheck2, BookOpenText, Quote, Clock } from "lucide-react";
 import { motion } from "framer-motion";
+import { MOOD_COLORS } from "@/lib/moods";
+import type { Mood } from "@/lib/types";
 
 async function fetchMe() {
   const res = await fetch("/api/me");
@@ -128,6 +130,37 @@ export function DashboardView() {
       ? "A quiet moment to look back."
       : "The night ahead has room for dreams.";
 
+  // r6: tonight's reflection prompt. Deterministic per-day rotation so the
+  // same prompt is shown all day (no flickering between renders), and the
+  // prompt set reflects the time of day (morning prompts favour recall,
+  // evening prompts favour intention).
+  const promptSeed = Math.floor(Date.now() / 86400000);
+  const eveningPrompts = [
+    "Carry one question into sleep tonight. What would you like the dream to answer?",
+    "Name a figure from a recent dream. Invite it to return.",
+    "Tonight, notice the threshold — the door, the staircase, the parting. Hold it in mind.",
+    "Ask the dream to repeat itself. The same motif, seen twice, tells more.",
+    "Before sleep, picture where you'd like to wake inside the dream.",
+  ];
+  const morningPrompts = [
+    "Hold the dream for one breath before checking the time. What stayed?",
+    "Name the first fragment that returns. Don't reach for the rest yet.",
+    "Was there a colour? A name? A direction? Write one, not all.",
+    "If the dream left a feeling, where in your body does it sit?",
+    "Don't explain it yet. Just describe the room you were in.",
+  ];
+  const promptSet = hour < 12 && hour >= 5 ? morningPrompts : eveningPrompts;
+  const tonightPrompt = promptSet[promptSeed % promptSet.length];
+  const promptKind = hour < 12 && hour >= 5 ? "Morning recall" : "Tonight's prompt";
+
+  // r6: streak microcopy — celebrate an active streak with a one-line whisper
+  // that sits beside the hero greeting. Doesn't replace the stat tile; it gives
+  // the streak a sentence-voice.
+  const streakLine =
+    stats.streak > 0
+      ? `${stats.streak} night${stats.streak === 1 ? "" : "s"} in a row — keep the thread.`
+      : null;
+
   return (
     <div className="mx-auto w-full max-w-6xl px-5 sm:px-8 py-10 sm:py-14">
       {/* hero greeting */}
@@ -137,11 +170,17 @@ export function DashboardView() {
         transition={{ duration: 0.5 }}
         className="flex flex-col sm:flex-row sm:items-end justify-between gap-6"
       >
-        <div>
-          <div className="text-xs tracking-caps uppercase text-muted-foreground mb-2 flex items-center gap-2">
+        <div className="min-w-0">
+          <div className="text-xs tracking-caps uppercase text-muted-foreground mb-2 flex items-center gap-2 flex-wrap">
             <GreetIcon className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
             {greeting}
             <span className="hidden sm:inline font-normal normal-case tracking-normal text-muted-foreground/70">· {greetingHint}</span>
+            {streakLine && (
+              <span className="ml-1 inline-flex items-center gap-1.5 text-foreground/70 normal-case tracking-normal">
+                <span className="h-px w-3 bg-border" />
+                {streakLine}
+              </span>
+            )}
           </div>
           <h1 className="font-display tracking-display text-5xl sm:text-6xl leading-[0.95] balance">
             {me?.user?.name ? `Welcome back, ${me.user.name.split(" ")[0]}.` : "Your dream observatory."}
@@ -202,19 +241,68 @@ export function DashboardView() {
             />
           </motion.div>
 
+          {/* r6: tonight's reflection prompt — a quiet invitation that sits
+              between the stats and the deep content. Deterministic per day. */}
+          <motion.button
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.08 }}
+            onClick={() => navigate("capture")}
+            className="mt-5 w-full text-left surface p-5 sm:p-6 flex items-start gap-4 lift group"
+            aria-label="Open tonight's reflection prompt in capture"
+          >
+            <div className="shrink-0 inline-flex h-10 w-10 items-center justify-center rounded-full bg-foreground/[0.05] text-foreground/70 group-hover:bg-foreground/10 transition">
+              <Quote className="h-4 w-4" strokeWidth={1.6} aria-hidden="true" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[11px] tracking-caps uppercase text-muted-foreground mb-1.5 flex items-center gap-2">
+                {promptKind}
+                <span className="h-px w-3 bg-border" />
+                <span className="font-data text-[10px]">daily</span>
+              </div>
+              <p className="font-display italic text-xl sm:text-2xl leading-snug text-foreground/90 pretty balance">
+                {tonightPrompt}
+              </p>
+              <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground group-hover:text-foreground transition">
+                <Sparkles className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
+                Open in capture
+                <ArrowRight className="h-3 w-3 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition" strokeWidth={1.6} aria-hidden="true" />
+              </div>
+            </div>
+          </motion.button>
+
           <div className="mt-5 grid grid-cols-1 lg:grid-cols-3 gap-5">
-          {/* Recent dream — big */}
+          {/* Recent dream — big. r6: mood-accented with a soft glow and motif chips. */}
           {recent && (
             <motion.button
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.05 }}
+              whileHover={{ y: -4 }}
               onClick={() => navigate("dream", { dreamId: recent.id })}
-              className="surface p-6 lg:col-span-2 text-left flex flex-col lift"
+              className="surface p-6 lg:col-span-2 text-left flex flex-col lift relative overflow-hidden"
             >
+              {/* mood-tinted accent ribbon */}
+              <span
+                aria-hidden="true"
+                className="absolute top-0 left-0 right-0 h-1"
+                style={{
+                  background: `linear-gradient(90deg, ${MOOD_COLORS[(recent.mood as Mood) ?? "neutral"]}, transparent)`,
+                }}
+              />
               <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
-                <span className="tracking-caps uppercase">Most recent dream</span>
-                <span>{new Date(recent.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}</span>
+                <span className="tracking-caps uppercase inline-flex items-center gap-2">
+                  <span
+                    className="mood-dot"
+                    style={{ background: MOOD_COLORS[(recent.mood as Mood) ?? "neutral"] }}
+                    aria-hidden="true"
+                  />
+                  Most recent dream
+                </span>
+                <span className="inline-flex items-center gap-1.5 font-data">
+                  <Clock className="h-3 w-3" strokeWidth={1.6} aria-hidden="true" />
+                  {new Date(recent.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                </span>
               </div>
               <h2 className="font-display tracking-display text-4xl leading-tight balance">
                 {recent.title || "Untitled dream"}
@@ -224,10 +312,21 @@ export function DashboardView() {
                   {recent.analysis.summary}
                 </p>
               )}
-              <div className="mt-auto pt-5 flex items-center gap-2 text-foreground">
-                <Moon className="h-4 w-4" strokeWidth={1.6} />
+              {/* motif chips — surface the dream's recurring elements right on the card */}
+              {recent.motifs && recent.motifs.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {recent.motifs.slice(0, 4).map((m: any, i: number) => (
+                    <span key={i} className="chip capitalize">{m.label}</span>
+                  ))}
+                  {recent.motifs.length > 4 && (
+                    <span className="chip">+{recent.motifs.length - 4}</span>
+                  )}
+                </div>
+              )}
+              <div className="mt-auto pt-5 flex items-center gap-2 text-foreground group">
+                <Moon className="h-4 w-4 group-hover:rotate-12 transition" strokeWidth={1.6} />
                 <span className="text-sm">Read reflection</span>
-                <ArrowRight className="h-4 w-4" strokeWidth={1.6} />
+                <ArrowRight className="h-4 w-4 group-hover:translate-x-1 transition" strokeWidth={1.6} />
               </div>
             </motion.button>
           )}

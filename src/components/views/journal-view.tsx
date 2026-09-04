@@ -1,10 +1,11 @@
 "use client";
 
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
+  ArrowRight,
   Loader2,
   Sparkles,
   Compass,
@@ -20,6 +21,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { buildJournalMarkdown, downloadMarkdown } from "@/lib/journal-export";
 import { useToast } from "@/hooks/use-toast";
 import type { Mood } from "@/lib/types";
+import { MOOD_COLORS, MOODS } from "@/lib/moods";
 
 async function fetchDreams() {
   const res = await fetch("/api/dreams");
@@ -27,16 +29,34 @@ async function fetchDreams() {
   return res.json();
 }
 
-// Editorial mood palette (mirrors the calendar + journal dots).
-const MOOD_COLORS: Record<Mood, string> = {
-  tense: "#413f3d",
-  melancholic: "#697184",
-  surreal: "#b1a6a4",
-  lucid: "#d8cfd0",
-  neutral: "#8a8580",
-};
-
-const MOODS: Mood[] = ["surreal", "tense", "melancholic", "lucid", "neutral"];
+// r6: highlight matched search terms inside dream cards. Splits the text on
+// the query (case-insensitive) and wraps each match in a <mark>. The match
+// is rendered with the editorial mood colour so it reads as a soft underline
+// rather than a harsh yellow highlighter.
+function Highlight({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <>{text}</>;
+  const lower = text.toLowerCase();
+  const needle = q.toLowerCase();
+  const out: React.ReactNode[] = [];
+  let i = 0;
+  let k = 0;
+  while (i < text.length) {
+    const idx = lower.indexOf(needle, i);
+    if (idx === -1) {
+      out.push(text.slice(i));
+      break;
+    }
+    if (idx > i) out.push(text.slice(i, idx));
+    out.push(
+      <mark key={k++} className="bg-[var(--rose)]/60 text-inherit rounded-[2px] px-0.5 -mx-0.5">
+        {text.slice(idx, idx + needle.length)}
+      </mark>
+    );
+    i = idx + needle.length;
+  }
+  return <>{out}</>;
+}
 
 function toDayKey(iso: string): string {
   const d = new Date(iso);
@@ -310,7 +330,14 @@ export function JournalView() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {items.map((d, i) => (
-                  <DreamCard key={d.id} dream={d} index={i} onOpen={() => navigate("dream", { dreamId: d.id })} onArcade={() => navigate("arcade", { dreamId: d.id })} />
+                  <DreamCard
+                    key={d.id}
+                    dream={d}
+                    index={i}
+                    query={query}
+                    onOpen={() => navigate("dream", { dreamId: d.id })}
+                    onArcade={() => navigate("arcade", { dreamId: d.id })}
+                  />
                 ))}
               </div>
             </section>
@@ -423,11 +450,13 @@ function EmptySearch({ onClear }: { onClear: () => void }) {
 function DreamCard({
   dream,
   index,
+  query,
   onOpen,
   onArcade,
 }: {
   dream: any;
   index: number;
+  query: string;
   onOpen: () => void;
   onArcade: () => void;
 }) {
@@ -435,12 +464,14 @@ function DreamCard({
   const motifs: string[] = a ? safeParse(a.motifsJson).slice(0, 4).map((m: any) => m.label) : [];
   const mood = dream.mood || "neutral";
   const moodColor = MOOD_COLORS[mood as Mood] ?? MOOD_COLORS.neutral;
+  const q = query.trim();
 
   return (
     <motion.article
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: Math.min(index * 0.04, 0.4) }}
+      whileHover={{ y: -4 }}
       className="surface p-5 flex flex-col cursor-pointer lift"
       onClick={onOpen}
     >
@@ -452,15 +483,19 @@ function DreamCard({
         {mood !== "neutral" && <span className="chip">{mood}</span>}
       </div>
       <h3 className="font-display text-2xl leading-snug tracking-tight balance">
-        {dream.title || "Untitled dream"}
+        <Highlight text={dream.title || "Untitled dream"} query={q} />
       </h3>
       {a && (
-        <p className="mt-2 text-sm text-muted-foreground pretty line-clamp-2">{a.summary}</p>
+        <p className="mt-2 text-sm text-muted-foreground pretty line-clamp-2">
+          <Highlight text={a.summary} query={q} />
+        </p>
       )}
       {motifs.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">
           {motifs.map((m, i) => (
-            <span key={i} className="chip">{m}</span>
+            <span key={i} className="chip">
+              <Highlight text={m} query={q} />
+            </span>
           ))}
         </div>
       )}
@@ -470,18 +505,19 @@ function DreamCard({
             e.stopPropagation();
             onOpen();
           }}
-          className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border"
+          className="group inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground underline underline-offset-4 decoration-border"
         >
           Read reflection
+          <ArrowRight className="h-3 w-3 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition" strokeWidth={1.6} aria-hidden="true" />
         </button>
         <button
           onClick={(e) => {
             e.stopPropagation();
             onArcade();
           }}
-          className="inline-flex items-center gap-1.5 text-xs text-foreground hover:opacity-70 transition"
+          className="group inline-flex items-center gap-1.5 text-xs text-foreground hover:opacity-70 transition"
         >
-          <Compass className="h-3.5 w-3.5" strokeWidth={1.6} />
+          <Compass className="h-3.5 w-3.5 group-hover:rotate-12 transition" strokeWidth={1.6} aria-hidden="true" />
           Re-enter
         </button>
       </div>

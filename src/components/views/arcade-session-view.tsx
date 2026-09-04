@@ -35,6 +35,9 @@ export function ArcadeSessionView() {
   const [action, setAction] = useState("");
   const [whisper, setWhisper] = useState(0);
   const [elapsedSec, setElapsedSec] = useState(0);
+  // r6: live-streamed scene text from the model — replaces the static shimmer
+  // with text that types itself as Gemini produces it.
+  const [streamingScene, setStreamingScene] = useState("");
 
   // While a turn is pending: rotate whispers + count seconds, so waiting feels
   // like drifting rather than stalling.
@@ -42,6 +45,7 @@ export function ArcadeSessionView() {
     if (!pending) return;
     setWhisper(0);
     setElapsedSec(0);
+    setStreamingScene("");
     const wi = setInterval(() => setWhisper((w) => (w + 1) % WHISPERS.length), 3600);
     const si = setInterval(() => setElapsedSec((s) => s + 1), 1000);
     return () => {
@@ -93,8 +97,12 @@ export function ArcadeSessionView() {
   async function takeTurn(payload: { userAction?: string; choiceId?: string }) {
     if (pending || ended) return;
     setPending(true);
+    setStreamingScene("");
     try {
-      const res = await fetch(`/api/arcade/sessions/${session.id}/turn`, {
+      // r6: SSE streaming turn — the scene text types itself as the model
+      // produces it. The endpoint emits delta + final events; we parse the
+      // text/event-stream manually (no EventSource because we need POST).
+      const res = await fetch(`/api/arcade/sessions/${session.id}/turn/stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -108,17 +116,57 @@ export function ArcadeSessionView() {
         }
         throw new Error(err.error || "The dream faltered.");
       }
-      const data2 = await res.json();
+      if (!res.body) throw new Error("The dream faltered.");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let finalPayload: any = null;
+      let errorMsg: string | null = null;
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let idx;
+        while ((idx = buffer.indexOf("\n\n")) !== -1) {
+          const chunk = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 2);
+          for (const line of chunk.split("\n")) {
+            const m = line.match(/^data:\s?(.*)$/);
+            if (!m) continue;
+            try {
+              const ev = JSON.parse(m[1]);
+              if (ev.type === "delta" && typeof ev.text === "string") {
+                setStreamingScene((s) => s + ev.text);
+              } else if (ev.type === "final") {
+                finalPayload = ev;
+              } else if (ev.type === "error") {
+                errorMsg = ev.error || "The dream faltered.";
+              }
+            } catch {
+              // skip malformed
+            }
+          }
+        }
+      }
+      if (errorMsg) throw new Error(errorMsg);
+      // If we got no final event, the stream ended early — refresh from server.
+      if (!finalPayload) {
+        qc.invalidateQueries({ queryKey: ["session", session.id] });
+        qc.invalidateQueries({ queryKey: ["sessions"] });
+        setAction("");
+        return;
+      }
       qc.invalidateQueries({ queryKey: ["session", session.id] });
       qc.invalidateQueries({ queryKey: ["sessions"] });
       setAction("");
-      if (data2.ending) {
-        toast({ title: data2.ending.title, description: data2.ending.body });
+      if (finalPayload.ending) {
+        toast({ title: finalPayload.ending.title, description: finalPayload.ending.body });
       }
     } catch (e: any) {
       toast({ title: "Turn failed", description: e.message, variant: "destructive" });
     } finally {
       setPending(false);
+      setStreamingScene("");
     }
   }
 
@@ -235,7 +283,9 @@ export function ArcadeSessionView() {
           );
         })}
 
-        {/* loading turn — the dream forms */}
+        {/* loading turn — the dream forms. r6: scene text types itself as
+            the model streams it; the shimmer is replaced by actual prose the
+            moment the first chunk arrives. */}
         <AnimatePresence>
           {pending && (
             <motion.div
@@ -250,7 +300,7 @@ export function ArcadeSessionView() {
               <div className="flex items-center justify-between text-[11px] text-muted-foreground mb-4">
                 <span className="tracking-caps uppercase flex items-center gap-2">
                   <span className="rec-dot h-1.5 w-1.5 rounded-full bg-foreground" aria-hidden="true" />
-                  The dream is forming
+                  {streamingScene ? "The dream unfolds" : "The dream is forming"}
                 </span>
                 <span className="font-data tabular-nums" aria-label={`${elapsedSec} seconds`}>
                   {elapsedSec}s
@@ -267,24 +317,35 @@ export function ArcadeSessionView() {
                   />
                   <Moon className="absolute inset-0 m-auto h-4 w-4 text-background" strokeWidth={1.8} />
                 </div>
-                <div className="flex-1 space-y-2.5 pt-1" aria-hidden="true">
-                  <div className="shimmer-line h-3 w-11/12" />
-                  <div className="shimmer-line h-3 w-full" />
-                  <div className="shimmer-line h-3 w-4/5" />
-                  <div className="shimmer-line h-3 w-3/5" />
+                <div className="flex-1 pt-1 min-w-0">
+                  {streamingScene ? (
+                    <p className="scene-text pretty streaming-text">
+                      {streamingScene}
+                      <span className="streaming-caret" aria-hidden="true" />
+                    </p>
+                  ) : (
+                    <div className="space-y-2.5" aria-hidden="true">
+                      <div className="shimmer-line h-3 w-11/12" />
+                      <div className="shimmer-line h-3 w-full" />
+                      <div className="shimmer-line h-3 w-4/5" />
+                      <div className="shimmer-line h-3 w-3/5" />
+                    </div>
+                  )}
                 </div>
               </div>
               <AnimatePresence mode="wait">
-                <motion.p
-                  key={whisper}
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.5 }}
-                  className="mt-4 font-display italic text-lg text-muted-foreground whisper"
-                >
-                  {WHISPERS[whisper]}
-                </motion.p>
+                {!streamingScene && (
+                  <motion.p
+                    key={whisper}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -4 }}
+                    transition={{ duration: 0.5 }}
+                    className="mt-4 font-display italic text-lg text-muted-foreground whisper"
+                  >
+                    {WHISPERS[whisper]}
+                  </motion.p>
+                )}
               </AnimatePresence>
             </motion.div>
           )}

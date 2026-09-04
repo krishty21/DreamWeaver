@@ -127,11 +127,14 @@ export type EmotionalTrendPoint = {
 };
 
 // One calendar day with dreams recorded. `mood` is the dominant mood of the
-// day's dreams (ties → the most recent dream's mood).
+// day's dreams (ties → the most recent dream's mood). `titles` carries the
+// (up to 3) dream titles for that night so the calendar can preview them on
+// hover without an extra round-trip. (r6 — calendar hover popover.)
 export type CalendarDay = {
   date: string; // YYYY-MM-DD
   count: number;
   mood: Mood;
+  titles: string[];
 };
 
 export type PatternReport = {

@@ -438,6 +438,27 @@
 }
 .whisper { animation: whisperFade 2.8s ease-in-out infinite; }
 
+/* r6: streaming scene-text caret — a thin serif bar that blinks while the
+   model is mid-stream, then disappears when the final scene text arrives. */
+@keyframes caretBlink {
+  0%, 100% { opacity: 0.9; }
+  50% { opacity: 0.15; }
+}
+.streaming-caret {
+  display: inline-block;
+  width: 0.42em;
+  height: 1.05em;
+  margin-left: 0.08em;
+  vertical-align: -0.18em;
+  background: linear-gradient(180deg, var(--mauve), var(--slate));
+  border-radius: 1px;
+  animation: caretBlink 1.05s ease-in-out infinite;
+}
+.streaming-text {
+  /* Soft fade-in so newly-streamed text doesn't pop. */
+  animation: whisperFade 4.2s ease-in-out infinite;
+}
+
 /* ---------- r4 polish ---------- */
 
 /* Meters sweep in from empty on first paint (partial keyframe → the element's
