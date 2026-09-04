@@ -16,7 +16,10 @@ export function useAuthRouting() {
   useEffect(() => {
     if (status === "loading") return;
     if (status === "unauthenticated") {
-      if (view !== "landing" && view !== "auth" && view !== "shared") {
+      // Public views a signed-out visitor may reach: landing, auth, and the
+      // two read-only public share surfaces (shared reflection + session story).
+      // Everything else is private and must redirect to landing.
+      if (view !== "landing" && view !== "auth" && view !== "shared" && view !== "story") {
         navigate("landing");
       }
     } else if (status === "authenticated") {

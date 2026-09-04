@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { generateArcadeTurnStreaming } from "@/lib/ai";
 import { applyDelta, endingText } from "@/lib/simulation";
 import { computeMemoryEcho } from "@/lib/memory-graph";
@@ -32,6 +32,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const { id } = await params;
 
+  const db = await getRepository();
   const session = await db.arcadeSession.findFirst({
     where: { id, userId },
     include: {
@@ -190,6 +191,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
       if (memoryEcho) response.memoryEcho = memoryEcho;
 
+      // GUARD: the streaming model call can outlive the lock's TTL (90s). If a
+      // retry arrived and re-acquired the lock, our writes would double-commit
+      // authoritative state. Bail cleanly in that case — the retry owns the
+      // turn now.
+      if (!lock.stillMine()) {
+        send({ type: "error", error: "The dream resettled. Try that again." });
+        return;
+      }
+
+      // COMPENSATING WRITE: persist the turn, then update the session's
+      // authoritative state. If the state update fails, roll back the orphan
+      // turn so the ledger and authoritative state cannot diverge.
       const turn = await db.sessionTurn.create({
         data: {
           sessionId: session.id,
@@ -205,20 +218,22 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         },
       });
 
-      if (ending) {
-        await db.arcadeSession.update({
-          where: { id: session.id },
-          data: {
-            status: "ended",
-            ending,
-            stateJson: JSON.stringify(newState),
-          },
-        });
-      } else {
-        await db.arcadeSession.update({
-          where: { id: session.id },
-          data: { stateJson: JSON.stringify(newState) },
-        });
+      try {
+        if (ending) {
+          await db.arcadeSession.update({
+            where: { id: session.id },
+            data: { status: "ended", ending, stateJson: JSON.stringify(newState) },
+          });
+        } else {
+          await db.arcadeSession.update({
+            where: { id: session.id },
+            data: { stateJson: JSON.stringify(newState) },
+          });
+        }
+      } catch (updateErr) {
+        // state write failed → remove the orphan turn so state stays consistent
+        try { await db.sessionTurn.delete({ where: { id: turn.id } }); } catch {}
+        throw updateErr;
       }
 
       send({
@@ -236,9 +251,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       });
     } catch (e: any) {
       console.warn("[api/arcade/turn/stream] failed:", e);
-      send({ type: "error", error: e?.message ?? "The dream faltered." });
+      // Never expose adapter internals / stack traces to the client.
+      send({ type: "error", error: "The dream faltered. Try that again." });
     } finally {
-      writer.close();
+      try { writer.close(); } catch {}
       // r12 — release the per-session single-flight lock so the next turn
       // can proceed immediately (rather than waiting for the TTL).
       lock.release();

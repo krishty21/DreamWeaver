@@ -2,7 +2,7 @@
 // AUTHORITATIVE: computed by the application from stored dream analyses + motifs.
 // The model never produces these directly — it only proposes per-dream motifs.
 
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { reconcileUserGraph, computeThreads } from "@/lib/memory-graph";
 import type {
   PatternReport,
@@ -52,6 +52,7 @@ function computeLexicon(rawTexts: { text: string }[], ignored: Set<string> = new
 }
 
 export async function computePatternReport(userId: string): Promise<PatternReport> {
+  const db = await getRepository();
   const dreams = await db.dream.findMany({
     where: { userId },
     include: { analysis: true, motifs: true },

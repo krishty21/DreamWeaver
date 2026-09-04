@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { generateArcadeTurn } from "@/lib/ai";
 import { applyDelta, endingText } from "@/lib/simulation";
 import { computeMemoryEcho } from "@/lib/memory-graph";
@@ -29,6 +29,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const { id } = await params;
 
+  const db = await getRepository();
   const session = await db.arcadeSession.findFirst({
     where: { id, userId },
     include: {
@@ -193,6 +194,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   try {
     // Persist the turn (with both proposed and applied deltas for transparency).
+    // COMPENSATING WRITE: if the authoritative ArcadeSession.stateJson update
+    // fails AFTER the SessionTurn row exists, we delete the orphan turn so the
+    // session's authoritative state and its turn ledger cannot diverge. A
+    // half-applied delta must never silently persist.
     const turn = await db.sessionTurn.create({
       data: {
         sessionId: session.id,
@@ -208,21 +213,26 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       },
     });
 
-    let updatedSession = session;
-    if (ending) {
-      updatedSession = await db.arcadeSession.update({
-        where: { id: session.id },
-        data: {
-          status: "ended",
-          ending,
-          stateJson: JSON.stringify(newState),
-        },
-      }) as any;
-    } else {
-      updatedSession = await db.arcadeSession.update({
-        where: { id: session.id },
-        data: { stateJson: JSON.stringify(newState) },
-      }) as any;
+    try {
+      if (ending) {
+        await db.arcadeSession.update({
+          where: { id: session.id },
+          data: {
+            status: "ended",
+            ending,
+            stateJson: JSON.stringify(newState),
+          },
+        });
+      } else {
+        await db.arcadeSession.update({
+          where: { id: session.id },
+          data: { stateJson: JSON.stringify(newState) },
+        });
+      }
+    } catch (updateErr) {
+      // state write failed → roll back the orphan turn so state stays consistent
+      try { await db.sessionTurn.delete({ where: { id: turn.id } }); } catch {}
+      throw updateErr;
     }
 
     return NextResponse.json({
@@ -238,6 +248,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         : null,
       reasoning: response.proposedDelta.reasoning ?? null,
     });
+  } catch (e) {
+    // Persistence or model-failure path: never expose adapter internals.
+    // The client sees a calm error; the lock still releases in `finally`.
+    return NextResponse.json(
+      { error: "The dream faltered. Try that again." },
+      { status: 500 }
+    );
   } finally {
     // r12 — always release the per-session single-flight lock so the next
     // turn can proceed (even if persistence threw; the lock would otherwise

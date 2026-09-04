@@ -3,27 +3,83 @@
 import { useSession } from "next-auth/react";
 import { useApp, View } from "@/lib/store";
 import { useAuthRouting } from "@/lib/use-auth-routing";
+import dynamic from "next/dynamic";
 import { useEffect } from "react";
 import { DreamBackground } from "@/components/shell/dream-background";
 import { TopNav, Footer } from "@/components/shell/top-nav";
 import { LandingView } from "@/components/views/landing-view";
 import { AuthView } from "@/components/views/auth-view";
-import { DashboardView } from "@/components/views/dashboard-view";
-import { CaptureView } from "@/components/views/capture-view";
-import { JournalView } from "@/components/views/journal-view";
-import { DreamDetailView } from "@/components/views/dream-detail-view";
-import { PatternsView } from "@/components/views/patterns-view";
-import { AtlasView } from "@/components/views/atlas-view";
-import { ArcadeView } from "@/components/views/arcade-view";
-import { ArcadeSessionView } from "@/components/views/arcade-session-view";
-import { ProfileView } from "@/components/views/profile-view";
-import { SharedDreamView } from "@/components/views/shared-dream-view";
-import { StoryView } from "@/components/views/story-view";
-import { EchoView } from "@/components/views/echo-view";
-import { ThreadsView } from "@/components/views/threads-view";
 import { CommandPalette } from "@/components/shell/command-palette";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, MotionConfig } from "framer-motion";
 import { Loader2 } from "lucide-react";
+
+// Lazy-loaded views — the initial bundle only carries Landing + Auth + the
+// shell. Each heavy view splits into its own chunk and is fetched on demand
+// when the user navigates to it. ssr:false because the whole app is a
+// client-side SPA (hash routing + Zustand + react-query) — there is nothing
+// to prerender here, and we never want these chunks in the server bundle.
+const DashboardView = dynamic(
+  () => import("@/components/views/dashboard-view").then((m) => m.DashboardView),
+  { ssr: false, loading: viewFallback },
+);
+const CaptureView = dynamic(
+  () => import("@/components/views/capture-view").then((m) => m.CaptureView),
+  { ssr: false, loading: viewFallback },
+);
+const JournalView = dynamic(
+  () => import("@/components/views/journal-view").then((m) => m.JournalView),
+  { ssr: false, loading: viewFallback },
+);
+const DreamDetailView = dynamic(
+  () => import("@/components/views/dream-detail-view").then((m) => m.DreamDetailView),
+  { ssr: false, loading: viewFallback },
+);
+const PatternsView = dynamic(
+  () => import("@/components/views/patterns-view").then((m) => m.PatternsView),
+  { ssr: false, loading: viewFallback },
+);
+const AtlasView = dynamic(
+  () => import("@/components/views/atlas-view").then((m) => m.AtlasView),
+  { ssr: false, loading: viewFallback },
+);
+const ArcadeView = dynamic(
+  () => import("@/components/views/arcade-view").then((m) => m.ArcadeView),
+  { ssr: false, loading: viewFallback },
+);
+const ArcadeSessionView = dynamic(
+  () => import("@/components/views/arcade-session-view").then((m) => m.ArcadeSessionView),
+  { ssr: false, loading: viewFallback },
+);
+const ProfileView = dynamic(
+  () => import("@/components/views/profile-view").then((m) => m.ProfileView),
+  { ssr: false, loading: viewFallback },
+);
+const SharedDreamView = dynamic(
+  () => import("@/components/views/shared-dream-view").then((m) => m.SharedDreamView),
+  { ssr: false, loading: viewFallback },
+);
+const StoryView = dynamic(
+  () => import("@/components/views/story-view").then((m) => m.StoryView),
+  { ssr: false, loading: viewFallback },
+);
+const EchoView = dynamic(
+  () => import("@/components/views/echo-view").then((m) => m.EchoView),
+  { ssr: false, loading: viewFallback },
+);
+const ThreadsView = dynamic(
+  () => import("@/components/views/threads-view").then((m) => m.ThreadsView),
+  { ssr: false, loading: viewFallback },
+);
+
+// Calm, centered spinner — matches the existing pre-hydration loading state
+// so lazy-load fill and the initial mount state read identically.
+function viewFallback() {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  );
+}
 
 export default function Home() {
   const { status } = useSession();
@@ -95,61 +151,63 @@ export default function Home() {
   const fullBleed = view === "shared" || view === "story" || view === "landing" || view === "auth" || !authed;
 
   return (
-    <div className="relative min-h-screen flex flex-col">
-      <DreamBackground mood={moodFor(view)} />
+    <MotionConfig reducedMotion="user">
+      <div className="relative min-h-screen flex flex-col">
+        <DreamBackground mood={moodFor(view)} />
 
-      {/* The shared reflection and the session story are standalone public
-          pages — they render their own brand bar and footer, never the
-          private app chrome. */}
-      {authed && view !== "shared" && view !== "story" && <TopNav />}
-      {authed && view !== "shared" && view !== "story" && <CommandPalette />}
+        {/* The shared reflection and the session story are standalone public
+            pages — they render their own brand bar and footer, never the
+            private app chrome. */}
+        {authed && view !== "shared" && view !== "story" && <TopNav />}
+        {authed && view !== "shared" && view !== "story" && <CommandPalette />}
 
-      <main className="relative z-10 flex-1 flex flex-col">
-        {loading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : fullBleed ? (
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={view}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.3 }}
-              className="relative z-10 flex-1 flex flex-col"
-            >
-              {view === "auth" ? (
-                <AuthView />
-              ) : view === "shared" ? (
-                <SharedDreamView />
-              ) : view === "story" ? (
-                <StoryView />
-              ) : (
-                <LandingView />
-              )}
-            </motion.div>
-          </AnimatePresence>
-        ) : (
-          <div className="relative z-10 flex-1 flex flex-col">
+        <main className="relative z-10 flex-1 flex flex-col">
+          {loading ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : fullBleed ? (
             <AnimatePresence mode="wait">
               <motion.div
-                key={view + (useApp.getState().activeDreamId ?? "") + (useApp.getState().activeSessionId ?? "")}
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
+                key={view}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="flex-1 flex flex-col"
+                transition={{ duration: 0.25 }}
+                className="relative z-10 flex-1 flex flex-col"
               >
-                {renderView(view)}
+                {view === "auth" ? (
+                  <AuthView />
+                ) : view === "shared" ? (
+                  <SharedDreamView />
+                ) : view === "story" ? (
+                  <StoryView />
+                ) : (
+                  <LandingView />
+                )}
               </motion.div>
             </AnimatePresence>
-          </div>
-        )}
-      </main>
+          ) : (
+            <div className="relative z-10 flex-1 flex flex-col">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={view + (useApp.getState().activeDreamId ?? "") + (useApp.getState().activeSessionId ?? "")}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
+                  className="flex-1 flex flex-col"
+                >
+                  {renderView(view)}
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          )}
+        </main>
 
-      {authed && view !== "shared" && view !== "story" && <Footer />}
-    </div>
+        {authed && view !== "shared" && view !== "story" && <Footer />}
+      </div>
+    </MotionConfig>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { Moon, Sparkles, BookOpenText, Map, Compass, User, LogOut, Globe, Search, Network } from "lucide-react";
+import { Moon, PenLine, BookOpenText, Map, Compass, User, LogOut, Globe, Search, Network } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
 import { useApp, View } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 
 const NAV: { view: View; label: string; icon: any }[] = [
   { view: "dashboard", label: "Today", icon: Moon },
-  { view: "capture", label: "Capture", icon: Sparkles },
+  { view: "capture", label: "Capture", icon: PenLine },
   { view: "journal", label: "Journal", icon: BookOpenText },
   { view: "patterns", label: "Patterns", icon: Map },
   { view: "atlas", label: "Atlas", icon: Globe },

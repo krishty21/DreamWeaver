@@ -1,0 +1,74 @@
+# DreamWeaver — Cloud Build pipeline.
+#
+# Builds the multi-stage Docker image, pushes it to Artifact Registry,
+# and deploys to Cloud Run with the production environment wired to
+# Firestore + Gemini + Secret Manager + Firebase Auth.
+#
+# Required substitutions (set when triggering the build):
+#   _REGION               e.g. us-central1
+#   _SERVICE_NAME         e.g. dreamweaver
+#   _AR_REPO              Artifact Registry repo name (e.g. dreamweaver)
+#   _RUNNER_SA            email of the runtime service account (must have
+#                         roles/datastore.user, roles/firebaseauth.admin,
+#                         roles/secretmanager.secretAccessor,
+#                         roles/artifactregistry.reader)
+#   _FIREBASE_PROJECT_ID  the Firebase/GCP project id
+#   _NEXTAUTH_SECRET_SM   secret name in Secret Manager (e.g. "NEXTAUTH_SECRET")
+#   _GEMINI_API_KEY_SM    secret name in Secret Manager (e.g. "GEMINI_API_KEY")
+#
+# This file is intentionally a real, deployable spec; it was NOT executed
+# in the sandbox (no Google Cloud credentials available).
+
+substitutions:
+  _REGION: us-central1
+  _SERVICE_NAME: dreamweaver
+  _AR_REPO: dreamweaver
+  _RUNNER_SA: dreamweaver-runner@YOUR_PROJECT.iam.gserviceaccount.com
+  _FIREBASE_PROJECT_ID: YOUR_FIREBASE_PROJECT_ID
+  _NEXTAUTH_SECRET_SM: NEXTAUTH_SECRET
+  _GEMINI_API_KEY_SM: GEMINI_API_KEY
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+steps:
+  # 1. Build the Docker image and push to Artifact Registry.
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}:${SHORT_SHA}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}:latest
+      - .
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - ${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}
+
+  # 2. Deploy to Cloud Run with the production environment.
+  - name: gcr.io/cloud-builders/gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE_NAME}
+      - --image=${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --service-account=${_RUNNER_SA}
+      - --port=8080
+      - --min-instances=0
+      - --max-instances=10
+      - --concurrency=80
+      - --cpu=1
+      - --memory=1Gi
+      - --timeout=300
+      - --ingress=all
+      - --no-allow-unauthenticated=false
+      - --set-env-vars=DATA_BACKEND=firestore,AI_BACKEND=gemini,AUTH_BACKEND=firebase,SECRETS_BACKEND=gsm,NEXTAUTH_URL=https://${_SERVICE_NAME}.${_REGION}.run.app,FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID},GCLOUD_PROJECT=${_FIREBASE_PROJECT_ID}
+      # Mount secrets from Secret Manager as env vars (the SA must have
+      # roles/secretmanager.secretAccessor).
+      - --set-secrets=NEXTAUTH_SECRET=${_NEXTAUTH_SECRET_SM}:latest,GEMINI_API_KEY=${_GEMINI_API_KEY_SM}:latest
+
+images:
+  - ${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}:${SHORT_SHA}
+  - ${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}:latest

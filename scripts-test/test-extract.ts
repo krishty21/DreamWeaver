@@ -1,18 +1,32 @@
-// Quick test of the JSON extraction/repair logic in src/lib/ai.ts
+// Quick test of the JSON extraction/repair logic in src/lib/ai/shared.ts.
+//
+// Module 1 refactored the AI layer: ai.ts is now a thin delegator and the
+// real repair logic lives in src/lib/ai/shared.ts. Both AI backends (zai +
+// gemini) import these helpers so the SAME validation/retry/clamp logic
+// runs regardless of which model serves the request.
+//
+// This test loads shared.ts, stubs out the zod + type imports so the pure
+// functions can be evaluated standalone, and exercises the repair logic.
 import { readFileSync } from "fs";
+import { join } from "path";
 
-// Strip SDK/zod imports so the pure functions can be evaluated standalone.
-const src = readFileSync("/home/z/my-project/src/lib/ai.ts", "utf8");
+// Resolve the shared repair module relative to this script so the test is
+// portable across machines (no hardcoded /home/z/... paths).
+const SHARED_PATH = join(import.meta.dir, "..", "src", "lib", "ai", "shared.ts");
+const src = readFileSync(SHARED_PATH, "utf8");
+// Stub `z` so the zod schemas at module load become inert Proxy objects
+// (extractJSON / parseWithRepairs / repairTruncated don't call into zod).
 const pre = src
-  .replace(/import ZAI from "z-ai-web-dev-sdk";/, "")
-  .replace(/import \{ z \} from "zod";/, `const mkStub = () => new Proxy(function(){}, { get: (t, p) => (p === "parse" ? (x) => x : mkStub()), apply: () => mkStub() });
-const z = mkStub();`)
-  .replace(/import type[\s\S]*?from "@\/lib\/types";/, "")
-  .replace(/import \{ DREAM_ANALYSIS_PROMPT, ARCADE_SYSTEM_PROMPT \} from "@\/lib\/prompts";/, "");
-// Transpile TS -> JS so `new Function` can evaluate it (exports are stubbed)
-const js = new Bun.Transpiler({ loader: "ts" }).transformSync(pre).replace(/export (async )?function/g, "$1function");
+  .replace(/import \{ z \} from "zod";/, `const mkStub = () => new Proxy(function(){}, { get: (t, p) => (p === "parse" ? (x) => x : (p === "parseSafe" ? () => ({ success: true, data: x }) : mkStub())), apply: () => mkStub() });\nconst z = mkStub();`)
+  .replace(/import type[\s\S]*?from "@\/lib\/types";/, "");
+// Transpile TS -> JS, strip ALL `export ` + `export default ` modifiers so
+// `new Function` can evaluate the body (exports are stubbed via the wrapper).
+const js = new Bun.Transpiler({ loader: "ts" })
+  .transformSync(pre)
+  .replace(/export\s+(async\s+)?(function|const|let|var)/g, "$1$2")
+  .replace(/export\s+\*/g, "");
 const mod: any = { exports: {} };
-const fn = new Function("exports", js + "\nexports.extractJSON = extractJSON;");
+const fn = new Function("exports", js + "\nexports.extractJSON = extractJSON;\nexports.parseWithRepairs = parseWithRepairs;\nexports.repairTruncated = repairTruncated;\nexports.normalizeJSONSource = normalizeJSONSource;");
 fn(mod);
 
 const extractJSON = (mod as any).extractJSON;
@@ -26,6 +40,7 @@ const cases: { name: string; input: string; expect: "ok" | "null" }[] = [
   { name: "truncated mid-string", input: '{"sceneText":"The door creaks open and the hallway stret', expect: "ok" },
   { name: "line comments", input: '{\n  // the scene\n  "a": 1\n}', expect: "ok" },
   { name: "smart quotes", input: '{\u201Ca\u201D:1}', expect: "ok" },
+  { name: "BOM + zero-width", input: '\uFEFF\u200B{"a":1}\u200B', expect: "ok" },
   { name: "truncated with one complete field", input: '{"sceneText":"complete scene","proposedDelta":{"fear":10,', expect: "ok" },
   { name: "array top-level", input: '[{"id":"c1"},{"id":"c2"}]', expect: "ok" },
   { name: "pure prose (no JSON at all)", input: "I am sorry, I cannot produce JSON today.", expect: "null" },
@@ -44,3 +59,4 @@ for (const c of cases) {
 const trunc = extractJSON('{"sceneText":"complete scene","proposedDelta":{"fear":10,');
 console.log("truncation keeps complete field:", trunc?.sceneText === "complete scene" ? "PASS" : "FAIL", JSON.stringify(trunc));
 console.log(`\n${pass} pass / ${fail} fail`);
+if (fail > 0) process.exit(1);

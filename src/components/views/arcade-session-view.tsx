@@ -433,7 +433,7 @@ export function ArcadeSessionView() {
             {turns.length === 0 ? (
               <div className="text-center py-3">
                 <p className="text-sm text-muted-foreground pretty mb-4">
-                  The dream is waiting. Step in and Gemini will open the first scene — grounded in
+                  The dream is waiting. Step in and the first scene will open — grounded in
                   what you recorded.
                 </p>
                 <Button

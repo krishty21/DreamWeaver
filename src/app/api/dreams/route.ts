@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { analyzeDream } from "@/lib/ai";
 import { reconcileUserGraph } from "@/lib/memory-graph";
 import { rateLimit, rateKey } from "@/lib/rate-limit";
@@ -8,7 +8,20 @@ import type { DreamAnalysisData } from "@/lib/types";
 import { z } from "zod";
 
 const createSchema = z.object({
-  rawText: z.string().trim().min(12, "Please write at least a sentence of what you remember."),
+  // Cap raw dream length at 8000 chars — protects the model + DB from
+  // huge-input abuse (directive §1 "malformed / very large inputs"). The
+  // pre-existing `.slice(0, 8000)` defence-in-depth stays as a backstop,
+  // but the schema now REJECTS oversized payloads with a clear 400 instead
+  // of silently truncating (truncation would persist a record that doesn't
+  // match what the model analyzed).
+  rawText: z
+    .string()
+    .trim()
+    .min(12, "Please write at least a sentence of what you remember.")
+    .max(8000, "That dream is quite long — please keep it under 8000 characters."),
+  // `userId` is intentionally NOT in this schema. The authenticated session
+  // is the sole source of truth for ownership; any client-supplied userId
+  // field is silently dropped by zod, never persisted.
 });
 
 // GET — list dreams (newest first), with analysis + motifs.
@@ -20,6 +33,7 @@ export async function GET() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
+  const db = await getRepository();
   const dreams = await db.dream.findMany({
     where: { userId },
     include: { analysis: true, motifs: { select: { label: true, type: true } } },
@@ -64,6 +78,8 @@ export async function POST(req: Request) {
       { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
     );
   }
+
+  const db = await getRepository();
 
   // gather prior dream history for the analyzer (motifs + dates + summaries)
   const prior = await db.dream.findMany({

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { endingText } from "@/lib/simulation";
 
 // GET a single arcade session with its turns (ownership enforced).
@@ -12,6 +12,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const { id } = await params;
+  const db = await getRepository();
   const session = await db.arcadeSession.findFirst({
     where: { id, userId },
     include: {
@@ -32,6 +33,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const { id } = await params;
+  const db = await getRepository();
   const owned = await db.arcadeSession.findFirst({ where: { id, userId } });
   if (!owned) return NextResponse.json({ error: "not found" }, { status: 404 });
   await db.arcadeSession.delete({ where: { id } });
@@ -47,6 +49,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const { id } = await params;
+  const db = await getRepository();
   const owned = await db.arcadeSession.findFirst({ where: { id, userId } });
   if (!owned) return NextResponse.json({ error: "not found" }, { status: 404 });
   await db.arcadeSession.update({

@@ -23,7 +23,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  Sparkles,
+  PenLine,
   BookOpenText,
   Map,
   Globe,
@@ -91,7 +91,7 @@ type DreamResult = {
 type Item = Action | DreamResult;
 
 const ACTIONS: Action[] = [
-  { kind: "action", id: "a-capture", label: "Capture a dream", hint: "write it before it fades", icon: Sparkles, view: "capture" },
+  { kind: "action", id: "a-capture", label: "Capture a dream", hint: "write it before it fades", icon: PenLine, view: "capture" },
   { kind: "action", id: "a-today", label: "Today", hint: "your observatory", icon: Moon, view: "dashboard" },
   { kind: "action", id: "a-journal", label: "Journal", hint: "every recorded night", icon: BookOpenText, view: "journal" },
   { kind: "action", id: "a-patterns", label: "Patterns", hint: "longitudinal memory", icon: Map, view: "patterns" },
@@ -240,7 +240,7 @@ function PaletteDialog({ onClose }: { onClose: () => void }) {
         dreamId: d.id,
         label: d.title || "Untitled dream",
         snippet: via
-          ? `“${viaLabel}” — the ${via} Gemini surfaced in this dream`
+          ? `“${viaLabel}” — the ${via} surfaced in this dream`
           : snippetAround(d.rawText ?? d.analysis?.summary ?? "", q),
         dateLabel: new Date(d.createdAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
         score: best,

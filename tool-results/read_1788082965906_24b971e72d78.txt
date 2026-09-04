@@ -1,0 +1,1598 @@
+     1→@import "tailwindcss";
+     2→@import "tw-animate-css";
+     3→
+     4→@custom-variant dark (&:is(.dark *));
+     5→
+     6→/* ===========================================================
+     7→   DreamWeaver visual system
+     8→   Light-mode, editorial, lucid, premium journal + soft surrealism.
+     9→   Palette: #F2F1EF / #B1A6A4 / #697184 / #D8CFD0 / #413F3D
+    10→   =========================================================== */
+    11→
+    12→@theme inline {
+    13→  --color-background: var(--background);
+    14→  --color-foreground: var(--foreground);
+    15→  --font-sans: var(--font-geist-sans);
+    16→  --font-serif: var(--font-cormorant);
+    17→  --font-mono: var(--font-geist-mono);
+    18→
+    19→  --color-sidebar-ring: var(--sidebar-ring);
+    20→  --color-sidebar-border: var(--sidebar-border);
+    21→  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    22→  --color-sidebar-accent: var(--sidebar-accent);
+    23→  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    24→  --color-sidebar-primary: var(--sidebar-primary);
+    25→  --color-sidebar-foreground: var(--sidebar-foreground);
+    26→  --color-sidebar: var(--sidebar);
+    27→  --color-chart-5: var(--chart-5);
+    28→  --color-chart-4: var(--chart-4);
+    29→  --color-chart-3: var(--chart-3);
+    30→  --color-chart-2: var(--chart-2);
+    31→  --color-chart-1: var(--chart-1);
+    32→  --color-ring: var(--ring);
+    33→  --color-input: var(--input);
+    34→  --color-border: var(--border);
+    35→  --color-destructive: var(--destructive);
+    36→  --color-accent-foreground: var(--accent-foreground);
+    37→  --color-accent: var(--accent);
+    38→  --color-muted-foreground: var(--muted-foreground);
+    39→  --color-muted: var(--muted);
+    40→  --color-secondary-foreground: var(--secondary-foreground);
+    41→  --color-secondary: var(--secondary);
+    42→  --color-primary-foreground: var(--primary-foreground);
+    43→  --color-primary: var(--primary);
+    44→  --color-popover-foreground: var(--popover-foreground);
+    45→  --color-popover: var(--popover);
+    46→  --color-card-foreground: var(--card-foreground);
+    47→  --color-card: var(--card);
+    48→  --radius-sm: calc(var(--radius) - 4px);
+    49→  --radius-md: calc(var(--radius) - 2px);
+    50→  --radius-lg: var(--radius);
+    51→  --radius-xl: calc(var(--radius) + 4px);
+    52→}
+    53→
+    54→:root {
+    55→  --radius: 0.75rem;
+    56→
+    57→  /* palette */
+    58→  --bg-warm: #f2f1ef;       /* warm off-white */
+    59→  --mauve: #b1a6a4;          /* muted mauve */
+    60→  --slate: #697184;          /* slate blue-grey */
+    61→  --rose: #d8cfd0;           /* dusty rose surface */
+    62→  --ink: #413f3d;            /* near-black */
+    63→
+    64→  --background: #f2f1ef;
+    65→  --foreground: #413f3d;
+    66→
+    67→  --card: #fbfaf8;
+    68→  --card-foreground: #413f3d;
+    69→
+    70→  --popover: #ffffff;
+    71→  --popover-foreground: #413f3d;
+    72→
+    73→  --primary: #413f3d;
+    74→  --primary-foreground: #f2f1ef;
+    75→
+    76→  --secondary: #e9e4e2;
+    77→  --secondary-foreground: #413f3d;
+    78→
+    79→  --muted: #efece9;
+    80→  --muted-foreground: #697184;
+    81→
+    82→  --accent: #697184;
+    83→  --accent-foreground: #f2f1ef;
+    84→
+    85→  --destructive: #a3544a;
+    86→  --border: rgba(65, 63, 61, 0.12);
+    87→  --input: rgba(65, 63, 61, 0.16);
+    88→  --ring: #b1a6a4;
+    89→
+    90→  --chart-1: #697184;   /* slate */
+    91→  --chart-2: #b1a6a4;   /* mauve */
+    92→  --chart-3: #d8cfd0;   /* rose */
+    93→  --chart-4: #9a8b88;   /* deeper mauve */
+    94→  --chart-5: #413f3d;   /* ink */
+    95→
+    96→  --sidebar: #f7f5f3;
+    97→  --sidebar-foreground: #413f3d;
+    98→  --sidebar-primary: #413f3d;
+    99→  --sidebar-primary-foreground: #f2f1ef;
+   100→  --sidebar-accent: #efece9;
+   101→  --sidebar-accent-foreground: #413f3d;
+   102→  --sidebar-border: rgba(65, 63, 61, 0.1);
+   103→  --sidebar-ring: #b1a6a4;
+   104→}
+   105→
+   106→.dark {
+   107→  /* A restrained "nocturne" mode — deep, low-contrast, never neon. */
+   108→  --background: #1f1d1c;
+   109→  --foreground: #ece9e6;
+   110→  --card: #262423;
+   111→  --card-foreground: #ece9e6;
+   112→  --popover: #262423;
+   113→  --popover-foreground: #ece9e6;
+   114→  --primary: #ece9e6;
+   115→  --primary-foreground: #1f1d1c;
+   116→  --secondary: #322f2e;
+   117→  --secondary-foreground: #ece9e6;
+   118→  --muted: #2c2a29;
+   119→  --muted-foreground: #9a8f8c;
+   120→  --accent: #697184;
+   121→  --accent-foreground: #ece9e6;
+   122→  --destructive: #c6685e;
+   123→  --border: rgba(255, 255, 255, 0.08);
+   124→  --input: rgba(255, 255, 255, 0.12);
+   125→  --ring: #b1a6a4;
+   126→  --chart-1: #b1a6a4;
+   127→  --chart-2: #697184;
+   128→  --chart-3: #d8cfd0;
+   129→  --chart-4: #8a7f7d;
+   130→  --chart-5: #ece9e6;
+   131→  --sidebar: #262423;
+   132→  --sidebar-foreground: #ece9e6;
+   133→  --sidebar-primary: #ece9e6;
+   134→  --sidebar-primary-foreground: #1f1d1c;
+   135→  --sidebar-accent: #322f2e;
+   136→  --sidebar-accent-foreground: #ece9e6;
+   137→  --sidebar-border: rgba(255, 255, 255, 0.08);
+   138→  --sidebar-ring: #b1a6a4;
+   139→}
+   140→
+   141→@layer base {
+   142→  * {
+   143→    @apply border-border outline-ring/50;
+   144→  }
+   145→  html {
+   146→    scroll-behavior: smooth;
+   147→  }
+   148→  html, body {
+   149→    @apply bg-background text-foreground;
+   150→  }
+   151→  body {
+   152→    font-feature-settings: "ss01", "ss02", "cv01", "cv03";
+   153→    -webkit-font-smoothing: antialiased;
+   154→    text-rendering: optimizeLegibility;
+   155→  }
+   156→  ::selection {
+   157→    background: color-mix(in srgb, var(--mauve) 35%, transparent);
+   158→    color: var(--ink);
+   159→  }
+   160→}
+   161→
+   162→/* ---------- Typography helpers ---------- */
+   163→.font-display { font-family: var(--font-cormorant), Georgia, serif; }
+   164→.font-body { font-family: var(--font-geist-sans), system-ui, sans-serif; }
+   165→.font-data { font-family: var(--font-geist-mono), ui-monospace, monospace; }
+   166→
+   167→.tracking-display { letter-spacing: -0.015em; }
+   168→.tracking-caps { letter-spacing: 0.18em; }
+   169→
+   170→/* Editorial text balance for headlines */
+   171→.balance { text-wrap: balance; }
+   172→.pretty { text-wrap: pretty; }
+   173→
+   174→/* ---------- Atmospheric layers ---------- */
+   175→/* Soft dream-field: layered radial gradients + subtle grain.
+   176→   Responds to mood via data-mood attribute on a parent. */
+   177→.dream-field {
+   178→  position: fixed;
+   179→  inset: 0;
+   180→  z-index: 0;
+   181→  pointer-events: none;
+   182→  /* Orbs drift past the viewport edges — clip so they never widen the page. */
+   183→  overflow: hidden;
+   184→  background:
+   185→    radial-gradient(60rem 40rem at 12% -10%, rgba(216, 207, 208, 0.55), transparent 60%),
+   186→    radial-gradient(50rem 36rem at 110% 0%, rgba(177, 166, 164, 0.35), transparent 55%),
+   187→    radial-gradient(70rem 50rem at 50% 120%, rgba(105, 113, 132, 0.18), transparent 60%),
+   188→    linear-gradient(180deg, #f6f4f1 0%, #efece9 100%);
+   189→}
+   190→.dream-field[data-mood="tense"] {
+   191→  background:
+   192→    radial-gradient(40rem 30rem at 20% -5%, rgba(120, 95, 92, 0.30), transparent 55%),
+   193→    radial-gradient(50rem 40rem at 105% 10%, rgba(80, 78, 76, 0.30), transparent 60%),
+   194→    linear-gradient(180deg, #efece9 0%, #e7e2df 100%);
+   195→  filter: saturate(0.92) contrast(0.98);
+   196→}
+   197→.dream-field[data-mood="lucid"] {
+   198→  background:
+   199→    radial-gradient(60rem 40rem at 10% -10%, rgba(245, 240, 235, 0.85), transparent 60%),
+   200→    radial-gradient(50rem 40rem at 100% 0%, rgba(216, 207, 208, 0.6), transparent 55%),
+   201→    linear-gradient(180deg, #faf8f5 0%, #f1eee9 100%);
+   202→}
+   203→.dream-field[data-mood="melancholic"] {
+   204→  background:
+   205→    radial-gradient(60rem 40rem at 15% -10%, rgba(150, 160, 175, 0.30), transparent 60%),
+   206→    radial-gradient(50rem 40rem at 100% 5%, rgba(120, 130, 145, 0.22), transparent 55%),
+   207→    linear-gradient(180deg, #efece9 0%, #e9e5e1 100%);
+   208→}
+   209→.dream-field[data-mood="surreal"] {
+   210→  background:
+   211→    radial-gradient(50rem 36rem at 8% -8%, rgba(216, 207, 208, 0.6), transparent 60%),
+   212→    radial-gradient(46rem 34rem at 100% 8%, rgba(177, 166, 164, 0.45), transparent 55%),
+   213→    radial-gradient(60rem 44rem at 50% 120%, rgba(105, 113, 132, 0.20), transparent 60%),
+   214→    linear-gradient(180deg, #f6f3ef 0%, #ece7e3 100%);
+   215→}
+   216→
+   217→/* Slow drifting orb for ambient motion */
+   218→.dream-orb {
+   219→  position: absolute;
+   220→  border-radius: 9999px;
+   221→  filter: blur(48px);
+   222→  opacity: 0.5;
+   223→  animation: drift 24s ease-in-out infinite alternate;
+   224→  will-change: transform, opacity;
+   225→}
+   226→@keyframes drift {
+   227→  0% { transform: translate3d(0, 0, 0) scale(1); }
+   228→  50% { transform: translate3d(2rem, -1.5rem, 0) scale(1.08); }
+   229→  100% { transform: translate3d(-1.5rem, 1rem, 0) scale(0.96); }
+   230→}
+   231→
+   232→/* Subtle film-grain veil */
+   233→.grain::after {
+   234→  content: "";
+   235→  position: absolute;
+   236→  inset: 0;
+   237→  pointer-events: none;
+   238→  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.045 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+   239→  mix-blend-mode: multiply;
+   240→  opacity: 0.4;
+   241→}
+   242→
+   243→/* Hairline rule used throughout the editorial layout */
+   244→.hairline { border-top: 1px solid var(--border); }
+   245→
+   246→/* Soft card surface used for journal/arcade panels */
+   247→.surface {
+   248→  background: color-mix(in srgb, var(--card) 92%, transparent);
+   249→  border: 1px solid var(--border);
+   250→  border-radius: var(--radius-lg);
+   251→  box-shadow:
+   252→    0 1px 0 0 rgba(255, 255, 255, 0.6) inset,
+   253→    0 1px 2px rgba(65, 63, 61, 0.04),
+   254→    0 12px 30px -18px rgba(65, 63, 61, 0.18);
+   255→}
+   256→.surface-quiet {
+   257→  background: color-mix(in srgb, var(--card) 88%, transparent);
+   258→  border: 1px solid var(--border);
+   259→  border-radius: var(--radius-md);
+   260→}
+   261→
+   262→/* Tag chip for motifs */
+   263→.chip {
+   264→  display: inline-flex;
+   265→  align-items: center;
+   266→  gap: 0.35rem;
+   267→  padding: 0.2rem 0.6rem;
+   268→  border-radius: 9999px;
+   269→  background: color-mix(in srgb, var(--rose) 70%, transparent);
+   270→  color: var(--ink);
+   271→  font-size: 0.72rem;
+   272→  letter-spacing: 0.04em;
+   273→  border: 1px solid color-mix(in srgb, var(--mauve) 40%, transparent);
+   274→  /* never let a long chip force the page wider than its container */
+   275→  max-width: 100%;
+   276→}
+   277→
+   278→/* State meter used in the arcade */
+   279→.meter-track {
+   280→  position: relative;
+   281→  height: 6px;
+   282→  border-radius: 9999px;
+   283→  background: color-mix(in srgb, var(--muted) 80%, transparent);
+   284→  overflow: hidden;
+   285→}
+   286→.meter-fill {
+   287→  position: absolute;
+   288→  inset: 0;
+   289→  border-radius: inherit;
+   290→  transform-origin: left center;
+   291→  transition: transform 600ms cubic-bezier(0.22, 1, 0.36, 1);
+   292→}
+   293→
+   294→/* Scene text styling */
+   295→.scene-text {
+   296→  font-family: var(--font-cormorant), Georgia, serif;
+   297→  font-size: 1.18rem;
+   298→  line-height: 1.65;
+   299→  letter-spacing: 0.005em;
+   300→}
+   301→
+   302→/* Fade/slide entrance utility */
+   303→@keyframes rise {
+   304→  from { opacity: 0; transform: translateY(8px); }
+   305→  to { opacity: 1; transform: translateY(0); }
+   306→}
+   307→.rise { animation: rise 600ms cubic-bezier(0.22, 1, 0.36, 1) both; }
+   308→
+   309→@keyframes pulseSoft {
+   310→  0%, 100% { opacity: 0.6; }
+   311→  50% { opacity: 0.8; }
+   312→}
+   313→.pulse-soft { animation: pulseSoft 3.4s ease-in-out infinite; }
+   314→
+   315→/* Reusable hover lift for cards (applies depth without heaviness) */
+   316→.lift {
+   317→  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1);
+   318→}
+   319→.lift:hover {
+   320→  transform: translateY(-3px);
+   321→  box-shadow:
+   322→    0 1px 0 0 rgba(255, 255, 255, 0.6) inset,
+   323→    0 2px 4px rgba(65, 63, 61, 0.05),
+   324→    0 22px 44px -24px rgba(65, 63, 61, 0.3);
+   325→}
+   326→
+   327→/* Floating dream fragments — soft surrealism accents for the landing hero */
+   328→@keyframes floaty {
+   329→  0% { transform: translateY(0) rotate(-2deg); opacity: 0; }
+   330→  12% { opacity: 0.75; }
+   331→  50% { transform: translateY(-14px) rotate(1.5deg); opacity: 0.55; }
+   332→  88% { opacity: 0.6; }
+   333→  100% { transform: translateY(-26px) rotate(-1deg); opacity: 0; }
+   334→}
+   335→.fragment {
+   336→  position: absolute;
+   337→  font-family: var(--font-cormorant), Georgia, serif;
+   338→  font-style: italic;
+   339→  color: var(--slate);
+   340→  white-space: nowrap;
+   341→  animation: floaty 11s ease-in-out infinite;
+   342→  pointer-events: none;
+   343→  user-select: none;
+   344→}
+   345→
+   346→/* Reading column for journal/dream prose */
+   347→.prose-dream {
+   348→  font-family: var(--font-geist-sans), system-ui, sans-serif;
+   349→  font-size: 1rem;
+   350→  line-height: 1.7;
+   351→  color: color-mix(in srgb, var(--foreground) 88%, transparent);
+   352→}
+   353→.prose-dream p + p { margin-top: 1rem; }
+   354→
+   355→/* Custom scrollbar for long lists */
+   356→.scroll-elegant {
+   357→  scrollbar-width: thin;
+   358→  scrollbar-color: color-mix(in srgb, var(--mauve) 55%, transparent) transparent;
+   359→}
+   360→.scroll-elegant::-webkit-scrollbar { width: 8px; height: 8px; }
+   361→.scroll-elegant::-webkit-scrollbar-thumb {
+   362→  background: color-mix(in srgb, var(--mauve) 50%, transparent);
+   363→  border-radius: 9999px;
+   364→}
+   365→.scroll-elegant::-webkit-scrollbar-track { background: transparent; }
+   366→
+   367→/* Focus ring */
+   368→.focus-ring:focus-visible {
+   369→  outline: 2px solid var(--ring);
+   370→  outline-offset: 2px;
+   371→}
+   372→
+   373→/* ---------- Voice capture ---------- */
+   374→
+   375→/* Expanding concentric rings while the microphone listens */
+   376→@keyframes ringOut {
+   377→  0% { transform: scale(0.62); opacity: 0.55; }
+   378→  100% { transform: scale(1.5); opacity: 0; }
+   379→}
+   380→.ring-rec {
+   381→  border: 1px solid color-mix(in srgb, var(--mauve) 70%, transparent);
+   382→  animation: ringOut 2.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+   383→  will-change: transform, opacity;
+   384→}
+   385→/* The listening orb reacts to live mic level via --lvl (0..1) set from JS */
+   386→.orb-rec {
+   387→  background:
+   388→    radial-gradient(circle at 35% 30%, rgba(216, 207, 208, 0.95), rgba(105, 113, 132, 0.55) 60%, rgba(65, 63, 61, 0.92) 100%);
+   389→  transform: scale(calc(0.86 + var(--lvl, 0.12) * 0.22));
+   390→  transition: transform 90ms linear;
+   391→  box-shadow: 0 10px 30px -12px rgba(105, 113, 132, 0.65);
+   392→}
+   393→/* Blinking recording dot */
+   394→@keyframes recBlink {
+   395→  0%, 100% { opacity: 1; }
+   396→  50% { opacity: 0.25; }
+   397→}
+   398→.rec-dot { animation: recBlink 1.4s ease-in-out infinite; }
+   399→
+   400→/* ---------- Arcade turn latency: shimmering scene placeholder ---------- */
+   401→@keyframes shimmerLine {
+   402→  0% { transform: translateX(-100%); }
+   403→  100% { transform: translateX(100%); }
+   404→}
+   405→.shimmer-line {
+   406→  position: relative;
+   407→  overflow: hidden;
+   408→  border-radius: 9999px;
+   409→  background: color-mix(in srgb, var(--mauve) 18%, transparent);
+   410→}
+   411→.shimmer-line::after {
+   412→  content: "";
+   413→  position: absolute;
+   414→  inset: 0;
+   415→  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ink) 10%, transparent), transparent);
+   416→  animation: shimmerLine 1.8s ease-in-out infinite;
+   417→}
+   418→/* Slow-drifting orb used while a scene forms */
+   419→@keyframes driftOrb {
+   420→  0%, 100% { transform: translate(0, 0) scale(1); }
+   421→  33% { transform: translate(6px, -8px) scale(1.06); }
+   422→  66% { transform: translate(-7px, 5px) scale(0.96); }
+   423→}
+   424→.drift-orb { animation: driftOrb 7s ease-in-out infinite; }
+   425→
+   426→/* ---------- Dashboard stat tiles ---------- */
+   427→.stat-tile {
+   428→  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1);
+   429→}
+   430→.stat-tile:hover {
+   431→  transform: translateY(-2px);
+   432→  box-shadow: 0 1px 0 0 rgba(255, 255, 255, 0.6) inset, 0 16px 32px -20px rgba(65, 63, 61, 0.28);
+   433→}
+   434→
+   435→/* Whisper text — italic serif that breathes (used while the dream forms) */
+   436→@keyframes whisperFade {
+   437→  0%, 100% { opacity: 0.45; }
+   438→  50% { opacity: 0.9; }
+   439→}
+   440→.whisper { animation: whisperFade 2.8s ease-in-out infinite; }
+   441→
+   442→/* r6: streaming scene-text caret — a thin serif bar that blinks while the
+   443→   model is mid-stream, then disappears when the final scene text arrives. */
+   444→@keyframes caretBlink {
+   445→  0%, 100% { opacity: 0.9; }
+   446→  50% { opacity: 0.15; }
+   447→}
+   448→.streaming-caret {
+   449→  display: inline-block;
+   450→  width: 0.42em;
+   451→  height: 1.05em;
+   452→  margin-left: 0.08em;
+   453→  vertical-align: -0.18em;
+   454→  background: linear-gradient(180deg, var(--mauve), var(--slate));
+   455→  border-radius: 1px;
+   456→  animation: caretBlink 1.05s ease-in-out infinite;
+   457→}
+   458→.streaming-text {
+   459→  /* Soft fade-in so newly-streamed text doesn't pop. */
+   460→  animation: whisperFade 4.2s ease-in-out infinite;
+   461→}
+   462→
+   463→/* ---------- r4 polish ---------- */
+   464→
+   465→/* Meters sweep in from empty on first paint (partial keyframe → the element's
+   466→   own inline scaleX becomes the implicit end state). `backwards` (not `both`)
+   467→   so the animation releases the property afterwards — the arcade's per-turn
+   468→   transform transitions keep working. */
+   469→@keyframes meterIn {
+   470→  from { transform: scaleX(0); }
+   471→}
+   472→.meter-fill {
+   473→  animation: meterIn 900ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+   474→}
+   475→
+   476→/* Calendar cells: gentle grow + ring on hover, raise above neighbours */
+   477→.cal-cell {
+   478→  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 160ms ease;
+   479→}
+   480→.cal-cell:hover {
+   481→  transform: scale(1.45);
+   482→  z-index: 10;
+   483→  position: relative;
+   484→  box-shadow: 0 4px 10px -2px rgba(65, 63, 61, 0.35);
+   485→}
+   486→
+   487→/* Mood dot used in journal cards (colour keyed to the dream's mood) */
+   488→.mood-dot {
+   489→  display: inline-block;
+   490→  width: 7px;
+   491→  height: 7px;
+   492→  border-radius: 9999px;
+   493→  flex-shrink: 0;
+   494→}
+   495→
+   496→/* Share URL code block — soft selection colour + truncation ellipsis */
+   497→.share-url {
+   498→  font-family: var(--font-geist-mono), ui-monospace, monospace;
+   499→  text-overflow: ellipsis;
+   500→  white-space: nowrap;
+   501→  overflow: hidden;
+   502→  user-select: all; /* one click selects the whole link for manual copy */
+   503→}
+   504→
+   505→/* Editorial first-letter flourish for the reflection summary on public pages */
+   506→@media (min-width: 640px) {
+   507→  .drop-first::first-letter {
+   508→    font-size: 2.9em;
+   509→    float: left;
+   510→    line-height: 0.82;
+   511→    padding-right: 0.12em;
+   512→    padding-top: 0.06em;
+   513→    font-family: var(--font-cormorant), Georgia, serif;
+   514→    color: var(--mauve);
+   515→  }
+   516→}
+   517→
+   518→/* Print: the shared reflection should print as a clean document */
+   519→@media print {
+   520→  .no-print { display: none !important; }
+   521→  body {
+   522→    background: #fff !important;
+   523→  }
+   524→  .surface, .surface-quiet {
+   525→    box-shadow: none !important;
+   526→    border-color: #ddd !important;
+   527→  }
+   528→}
+   529→
+   530→/* ---------- r7 polish ---------- */
+   531→
+   532→/* Audio player progress bar — subtle animated sheen while loading */
+   533→@keyframes audioPulse {
+   534→  0%, 100% { opacity: 0.32; }
+   535→  50% { opacity: 0.7; }
+   536→}
+   537→.audio-loading-bar { animation: audioPulse 1.6s ease-in-out infinite; }
+   538→
+   539→/* Atlas cards: subtle ink-tinted inner ring on hover to read as "selected" */
+   540→.atlas-card:hover {
+   541→  box-shadow:
+   542→    0 1px 0 0 rgba(255, 255, 255, 0.6) inset,
+   543→    0 2px 4px rgba(65, 63, 61, 0.05),
+   544→    0 24px 48px -28px rgba(65, 63, 61, 0.32),
+   545→    0 0 0 1px color-mix(in srgb, var(--mauve) 30%, transparent);
+   546→}
+   547→
+   548→/* Mood spectrum stacked bar — each segment has a soft inset highlight */
+   549→.mood-segment {
+   550→  position: relative;
+   551→}
+   552→.mood-segment::after {
+   553→  content: "";
+   554→  position: absolute;
+   555→  inset: 0;
+   556→  background: linear-gradient(180deg, rgba(255,255,255,0.32) 0%, transparent 50%);
+   557→  pointer-events: none;
+   558→}
+   559→
+   560→/* Long-press affordance — when the user holds a calendar cell, briefly
+   561→   ring it in the foreground colour so the hold feels acknowledged. */
+   562→@keyframes calHoldAck {
+   563→  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ink) 45%, transparent); }
+   564→  100% { box-shadow: 0 0 0 6px transparent; }
+   565→}
+   566→.cal-hold-ack { animation: calHoldAck 0.6s ease-out; }
+   567→
+   568→/* Section eyebrow: a small typographic ornament (·) before the label */
+   569→.eyebrow {
+   570→  display: inline-flex;
+   571→  align-items: center;
+   572→  gap: 0.55rem;
+   573→  font-size: 0.7rem;
+   574→  letter-spacing: 0.18em;
+   575→  text-transform: uppercase;
+   576→  color: var(--muted-foreground);
+   577→}
+   578→.eyebrow::before {
+   579→  content: "";
+   580→  display: inline-block;
+   581→  width: 1.1rem;
+   582→  height: 1px;
+   583→  background: color-mix(in srgb, var(--mauve) 60%, transparent);
+   584→}
+   585→
+   586→/* A "type tag" for the atlas — the small UPPERCASE label inside each card */
+   587→.type-tag {
+   588→  font-size: 0.6rem;
+   589→  letter-spacing: 0.16em;
+   590→  text-transform: uppercase;
+   591→  color: var(--muted-foreground);
+   592→}
+   593→
+   594→/* Page hero ornament — a soft horizontal hairline that sits above the page
+   595→   title, evoking the top of a printed page. */
+   596→.page-rule {
+   597→  height: 1px;
+   598→  width: 100%;
+   599→  background: linear-gradient(90deg,
+   600→    transparent 0%,
+   601→    color-mix(in srgb, var(--mauve) 70%, transparent) 30%,
+   602→    color-mix(in srgb, var(--mauve) 70%, transparent) 70%,
+   603→    transparent 100%);
+   604→  margin-bottom: 1.25rem;
+   605→}
+   606→
+   607→/* Soft fade at the bottom of long scroll regions (mobile) */
+   608→.scroll-fade-b {
+   609→  -webkit-mask-image: linear-gradient(to bottom, black calc(100% - 56px), transparent 100%);
+   610→  mask-image: linear-gradient(to bottom, black calc(100% - 56px), transparent 100%);
+   611→}
+   612→
+   613→/* Keyboard shortcut keycaps — make them feel physical */
+   614→kbd {
+   615→  font-family: var(--font-geist-mono), ui-monospace, monospace;
+   616→  background: linear-gradient(180deg,
+   617→    color-mix(in srgb, var(--card) 100%, transparent) 0%,
+   618→    color-mix(in srgb, var(--muted) 100%, transparent) 100%);
+   619→  box-shadow:
+   620→    inset 0 -1px 0 rgba(65, 63, 61, 0.18),
+   621→    0 1px 0 rgba(255, 255, 255, 0.5);
+   622→}
+   623→
+   624→/* TTS narration controls — the speed segmented control should read as
+   625→   soft pills rather than the default button look */
+   626→.tts-speed-pill {
+   627→  font-family: var(--font-geist-mono), ui-monospace, monospace;
+   628→  letter-spacing: 0.06em;
+   629→}
+   630→
+   631→/* Subtle hover state for filter chips so they feel tactile */
+   632→.filter-chip {
+   633→  transition: background-color 200ms ease, color 200ms ease, transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+   634→}
+   635→.filter-chip:hover:not([aria-pressed="true"]) {
+   636→  transform: translateY(-1px);
+   637→}
+   638→
+   639→/* Long-press hint dots — three small dots that pulse while the user holds a
+   640→   calendar cell, signalling that the hold is being acknowledged. */
+   641→@keyframes holdDots {
+   642→  0%, 100% { opacity: 0.4; transform: scale(0.85); }
+   643→  50% { opacity: 1; transform: scale(1); }
+   644→}
+   645→.hold-dot {
+   646→  display: inline-block;
+   647→  width: 3px;
+   648→  height: 3px;
+   649→  border-radius: 9999px;
+   650→  background: var(--ink);
+   651→  animation: holdDots 1.05s ease-in-out infinite;
+   652→}
+   653→.hold-dot:nth-child(2) { animation-delay: 0.15s; }
+   654→.hold-dot:nth-child(3) { animation-delay: 0.3s; }
+   655→
+   656→/* Drop-cap-like ornament for the longitudinal arc heading on the atlas */
+   657→.atlas-arc-eyebrow {
+   658→  display: inline-flex;
+   659→  align-items: center;
+   660→  gap: 0.5rem;
+   661→  color: var(--muted-foreground);
+   662→  font-size: 0.7rem;
+   663→  letter-spacing: 0.18em;
+   664→  text-transform: uppercase;
+   665→}
+   666→
+   667→/* ---------- r8 polish ---------- */
+   668→
+   669→/* Streak pulse dot — a small pulsing dot beside the streak microcopy in the
+   670→   dashboard greeting eyebrow. Signals "this thread is live". */
+   671→@keyframes streakPulse {
+   672→  0%, 100% { opacity: 0.55; transform: scale(0.85); }
+   673→  50% { opacity: 1; transform: scale(1.05); }
+   674→}
+   675→.streak-pulse-dot {
+   676→  display: inline-block;
+   677→  width: 5px;
+   678→  height: 5px;
+   679→  border-radius: 9999px;
+   680→  background: var(--mauve);
+   681→  box-shadow: 0 0 0 3px color-mix(in srgb, var(--rose) 35%, transparent);
+   682→  animation: streakPulse 2.4s ease-in-out infinite;
+   683→}
+   684→
+   685→/* TTS cached / fresh pills — small affordances inside the audio player that
+   686→   tell the user whether the narration was served from the server cache or
+   687→   freshly woven. The cached pill is mauve-tinted; the fresh-weave pill is
+   688→   rose-tinted with a tiny sparkle. */
+   689→.tts-cached-pill {
+   690→  background: color-mix(in srgb, var(--mauve) 22%, transparent);
+   691→  color: color-mix(in srgb, var(--mauve) 80%, var(--ink));
+   692→  border: 1px solid color-mix(in srgb, var(--mauve) 35%, transparent);
+   693→  font-family: var(--font-geist-mono), ui-monospace, monospace;
+   694→}
+   695→.tts-cached-dot {
+   696→  display: inline-block;
+   697→  width: 4px;
+   698→  height: 4px;
+   699→  border-radius: 9999px;
+   700→  background: var(--mauve);
+   701→}
+   702→.tts-fresh-pill {
+   703→  background: color-mix(in srgb, var(--rose) 55%, transparent);
+   704→  color: color-mix(in srgb, var(--ink) 80%, var(--mauve));
+   705→  border: 1px solid color-mix(in srgb, var(--mauve) 30%, transparent);
+   706→  font-family: var(--font-geist-mono), ui-monospace, monospace;
+   707→}
+   708→
+   709→/* Atlas "Browse N dreams" button + stacked list — the toggle reads as a
+   710→   quiet editorial affordance; the list rows have a soft hover that doesn't
+   711→   compete with the card lift. */
+   712→.atlas-browse-btn {
+   713→  transition: opacity 200ms ease, transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+   714→}
+   715→.atlas-browse-btn:hover {
+   716→  opacity: 0.85;
+   717→}
+   718→.atlas-browse-btn[aria-expanded="true"] {
+   719→  opacity: 1;
+   720→}
+   721→.atlas-dreams-stack {
+   722→  border-top: 1px dashed color-mix(in srgb, var(--mauve) 30%, transparent);
+   723→  padding-top: 0.5rem;
+   724→}
+   725→.atlas-dream-row {
+   726→  transition: background-color 160ms ease, padding-left 200ms cubic-bezier(0.22, 1, 0.36, 1);
+   727→}
+   728→.atlas-dream-row:hover {
+   729→  padding-left: 0.75rem;
+   730→}
+   731→
+   732→/* Co-occurrence chip pair — the "·" between motif labels is kerned tighter
+   733→   so the pair reads as a unit rather than two unrelated chips. */
+   734→.co-occurrence-chip {
+   735→  font-family: var(--font-cormorant), Georgia, serif;
+   736→  border: 1px solid color-mix(in srgb, var(--mauve) 28%, transparent);
+   737→  background: color-mix(in srgb, var(--card) 92%, transparent);
+   738→}
+   739→.co-occurrence-chip:hover {
+   740→  /* The .lift class already lifts; this adds a subtle ring expansion. */
+   741→  box-shadow:
+   742→    0 1px 0 0 rgba(255, 255, 255, 0.6) inset,
+   743→    0 2px 4px rgba(65, 63, 61, 0.05),
+   744→    0 16px 32px -22px rgba(65, 63, 61, 0.3),
+   745→    0 0 0 1px color-mix(in srgb, var(--mauve) 26%, transparent);
+   746→}
+   747→
+   748→/* Capture textarea focus glow — a soft mauve halo around the surface when
+   749→   the textarea is focused. The :focus-within selector fires on the wrapper
+   750→   so the whole card glows, not just the input edge. */
+   751→.capture-surface {
+   752→  transition: box-shadow 300ms cubic-bezier(0.22, 1, 0.36, 1);
+   753→}
+   754→.capture-surface:focus-within {
+   755→  box-shadow:
+   756→    0 1px 0 0 rgba(255, 255, 255, 0.6) inset,
+   757→    0 2px 4px rgba(65, 63, 61, 0.05),
+   758→    0 18px 36px -22px rgba(65, 63, 61, 0.3),
+   759→    0 0 0 1px color-mix(in srgb, var(--mauve) 32%, transparent),
+   760→    0 0 0 6px color-mix(in srgb, var(--rose) 22%, transparent);
+   761→}
+   762→
+   763→/* Editorial section ornament — a thin three-dot asterisk divider that sits
+   764→   between major sections on long views (atlas, patterns). Evokes the
+   765→   "printers' flower" used in old journals without weighing the page. */
+   766→.ornament-rule {
+   767→  display: flex;
+   768→  align-items: center;
+   769→  justify-content: center;
+   770→  gap: 1rem;
+   771→  margin: 1.75rem 0;
+   772→  color: color-mix(in srgb, var(--mauve) 65%, transparent);
+   773→  user-select: none;
+   774→}
+   775→.ornament-rule::before,
+   776→.ornament-rule::after {
+   777→  content: "";
+   778→  flex: 1;
+   779→  height: 1px;
+   780→  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--mauve) 38%, transparent), transparent);
+   781→}
+   782→.ornament-rule-dots {
+   783→  display: inline-flex;
+   784→  align-items: center;
+   785→  gap: 0.4rem;
+   786→  letter-spacing: 0.05em;
+   787→  font-family: var(--font-cormorant), Georgia, serif;
+   788→  font-size: 1rem;
+   789→  font-style: italic;
+   790→}
+   791→.ornament-rule-dots span {
+   792→  display: inline-block;
+   793→  width: 4px;
+   794→  height: 4px;
+   795→  border-radius: 9999px;
+   796→  background: color-mix(in srgb, var(--mauve) 65%, transparent);
+   797→}
+   798→
+   799→/* Subtle hover state for the dashboard "tonight's prompt" + longitudinal
+   800→   insight cards — they already have .lift; this adds a faint ink-tinted ring
+   801→   on hover so they read as "the live card of the moment". */
+   802→.surface.focusable:hover {
+   803→  box-shadow:
+   804→    0 1px 0 0 rgba(255, 255, 255, 0.6) inset,
+   805→    0 2px 4px rgba(65, 63, 61, 0.05),
+   806→    0 22px 44px -24px rgba(65, 63, 61, 0.3),
+   807→    0 0 0 1px color-mix(in srgb, var(--mauve) 22%, transparent);
+   808→}
+   809→
+   810→/* Sparkline polish: the area fill gradient is defined inline in the SVG;
+   811→   this rule just makes the line render with a subtle drop shadow under it
+   812→   for depth. */
+   813→svg .spark-line-shadow {
+   814→  filter: drop-shadow(0 2px 1px color-mix(in srgb, var(--ink) 8%, transparent));
+   815→}
+   816→
+   817→/* Audio player polish: the play button gets a soft inset ring on focus so
+   818→   keyboard users see the focus clearly without the default outline. */
+   819→.capture-surface:focus-within,
+   820→.atlas-browse-btn:focus-visible,
+   821→.atlas-dream-row:focus-visible,
+   822→.tts-speed-pill:focus-visible {
+   823→  outline: 2px solid var(--ring);
+   824→  outline-offset: 2px;
+   825→}
+   826→
+   827→/* ============================================================
+   828→   r9 — Command palette (⌘K)
+   829→   An editorial take on the command palette: paper-warm dialog,
+   830→   serif dream titles, mono metadata, and a selection state that
+   831→   reads as a soft ink bar rather than a harsh highlight.
+   832→   ============================================================ */
+   833→.palette-dialog {
+   834→  background: color-mix(in srgb, var(--background) 92%, white 8%);
+   835→  border: 1px solid color-mix(in srgb, var(--mauve) 30%, transparent);
+   836→  box-shadow:
+   837→    0 1px 0 0 rgba(255, 255, 255, 0.7) inset,
+   838→    0 4px 8px rgba(65, 63, 61, 0.06),
+   839→    0 32px 64px -24px rgba(65, 63, 61, 0.4);
+   840→}
+   841→
+   842→.palette-item {
+   843→  position: relative;
+   844→  border-radius: 0.5rem;
+   845→  margin: 0 0.5rem;
+   846→  outline: none;
+   847→}
+   848→.palette-item::before {
+   849→  /* soft ink indicator bar for the selected row */
+   850→  content: "";
+   851→  position: absolute;
+   852→  left: 0;
+   853→  top: 18%;
+   854→  bottom: 18%;
+   855→  width: 2px;
+   856→  border-radius: 9999px;
+   857→  background: transparent;
+   858→  transition: background 160ms ease, top 160ms ease, bottom 160ms ease;
+   859→}
+   860→.palette-item-active {
+   861→  background: color-mix(in srgb, var(--mauve) 12%, transparent);
+   862→}
+   863→.palette-item-active::before {
+   864→  background: var(--ink, #413f3d);
+   865→}
+   866→.palette-item-icon {
+   867→  display: inline-flex;
+   868→  align-items: center;
+   869→  justify-content: center;
+   870→  height: 1.75rem;
+   871→  width: 1.75rem;
+   872→  border-radius: 9999px;
+   873→  color: var(--muted-foreground);
+   874→  background: color-mix(in srgb, var(--mauve) 14%, transparent);
+   875→  transition: background 160ms ease, color 160ms ease;
+   876→}
+   877→.palette-item-active .palette-item-icon {
+   878→  color: var(--foreground);
+   879→  background: color-mix(in srgb, var(--rose) 45%, transparent);
+   880→}
+   881→.palette-item:focus-visible {
+   882→  outline: 2px solid var(--ring);
+   883→  outline-offset: -2px;
+   884→}
+   885→
+   886→/* r10 — "via" pill on palette results: names the structured field a match
+   887→   came from (motif / person / place / symbol / action) so a result row
+   888→   explains itself at a glance. */
+   889→.palette-via-tag {
+   890→  font-family: var(--font-data), ui-monospace, monospace;
+   891→  font-size: 9px;
+   892→  letter-spacing: 0.14em;
+   893→  text-transform: uppercase;
+   894→  color: color-mix(in srgb, var(--mauve) 85%, var(--ink, #413f3d));
+   895→  background: color-mix(in srgb, var(--mauve) 18%, transparent);
+   896→  border: 1px solid color-mix(in srgb, var(--mauve) 35%, transparent);
+   897→  border-radius: 9999px;
+   898→  padding: 0.1rem 0.45rem;
+   899→  line-height: 1.4;
+   900→}
+   901→.palette-item-active .palette-via-tag {
+   902→  background: color-mix(in srgb, var(--rose) 40%, transparent);
+   903→  border-color: color-mix(in srgb, var(--rose) 60%, transparent);
+   904→  color: var(--ink, #413f3d);
+   905→}
+   906→
+   907→/* ============================================================
+   908→   r9 — Dream lexicon cloud (Patterns view)
+   909→   Frequency-scaled serif words; hover reveals the count and a
+   910→   gentle lift. The words sit on a baseline rhythm so the cloud
+   911→   reads like a poem, not a tag soup.
+   912→   ============================================================ */
+   913→.lexicon-cloud {
+   914→  display: flex;
+   915→  flex-wrap: wrap;
+   916→  align-items: baseline;
+   917→  justify-content: center;
+   918→  gap: 0.35rem 0.9rem;
+   919→  line-height: 1.5;
+   920→}
+   921→.lexicon-word {
+   922→  position: relative;
+   923→  font-family: var(--font-cormorant), Georgia, serif;
+   924→  color: color-mix(in srgb, var(--ink, #413f3d) 78%, var(--mauve));
+   925→  transition: color 180ms ease, transform 220ms cubic-bezier(0.22, 1, 0.36, 1), text-shadow 220ms ease;
+   926→  border-radius: 0.25rem;
+   927→  cursor: pointer;
+   928→  background: none;
+   929→  border: none;
+   930→  padding: 0 0.15rem;
+   931→  outline: none;
+   932→}
+   933→.lexicon-word:hover {
+   934→  color: var(--ink, #413f3d);
+   935→  transform: translateY(-2px);
+   936→  text-shadow: 0 6px 14px color-mix(in srgb, var(--rose) 55%, transparent);
+   937→}
+   938→.lexicon-word:focus-visible {
+   939→  outline: 2px solid var(--ring);
+   940→  outline-offset: 2px;
+   941→}
+   942→.lexicon-word .lexicon-count {
+   943→  position: absolute;
+   944→  top: -0.75rem;
+   945→  right: -0.4rem;
+   946→  font-family: var(--font-geist-mono), ui-monospace, monospace;
+   947→  font-size: 0.5rem;
+   948→  letter-spacing: 0.06em;
+   949→  color: var(--muted-foreground);
+   950→  opacity: 0;
+   951→  transition: opacity 180ms ease;
+   952→  pointer-events: none;
+   953→}
+   954→.lexicon-word:hover .lexicon-count,
+   955→.lexicon-word:focus-visible .lexicon-count {
+   956→  opacity: 1;
+   957→}
+   958→
+   959→/* ============================================================
+   960→   r9 — Weekly digest + records strip
+   961→   Small editorial tiles with serif numerals and mono captions.
+   962→   ============================================================ */
+   963→.digest-stat {
+   964→  display: flex;
+   965→  flex-direction: column;
+   966→  gap: 0.15rem;
+   967→  min-width: 0;
+   968→}
+   969→.digest-stat-value {
+   970→  font-family: var(--font-cormorant), Georgia, serif;
+   971→  font-size: 1.6rem;
+   972→  line-height: 1.1;
+   973→  color: var(--foreground);
+   974→  /* hard guard: a long value can never push a mobile grid cell wider */
+   975→  max-width: 100%;
+   976→  overflow-wrap: anywhere;
+   977→}
+   978→.digest-stat-label {
+   979→  font-family: var(--font-geist-mono), ui-monospace, monospace;
+   980→  font-size: 0.575rem;
+   981→  letter-spacing: 0.14em;
+   982→  text-transform: uppercase;
+   983→  color: var(--muted-foreground);
+   984→}
+   985→.record-tile {
+   986→  display: flex;
+   987→  flex-direction: column;
+   988→  gap: 0.5rem;
+   989→  padding: 1.1rem 1.15rem;
+   990→  border-radius: 0.75rem;
+   991→  background: color-mix(in srgb, var(--mauve) 7%, transparent);
+   992→  border: 1px solid color-mix(in srgb, var(--mauve) 18%, transparent);
+   993→  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 240ms ease,
+   994→    border-color 240ms ease;
+   995→}
+   996→.record-tile:hover {
+   997→  transform: translateY(-2px);
+   998→  border-color: color-mix(in srgb, var(--mauve) 34%, transparent);
+   999→  box-shadow: 0 12px 24px -16px rgba(65, 63, 61, 0.35);
+  1000→}
+  1001→
+  1002→/* ============================================================
+  1003→   r10 — Session STORY (public read-only narrative)
+  1004→   A re-entered dream printed as a readable night-record: turn
+  1005→   rules, editorial action lines, a drop cap on the entry scene,
+  1006→   and quiet share chips on the ended-session card.
+  1007→   ============================================================ */
+  1008→.story-turn {
+  1009→  /* subtle left hairline so each turn reads as a stanza of the night */
+  1010→  position: relative;
+  1011→  padding-left: 0;
+  1012→}
+  1013→.story-action {
+  1014→  font-size: 0.8125rem;
+  1015→  color: var(--muted-foreground);
+  1016→  font-style: italic;
+  1017→  margin-bottom: 0.65rem;
+  1018→}
+  1019→.story-dropcap::first-letter {
+  1020→  font-family: var(--font-cormorant), Georgia, serif;
+  1021→  font-size: 3.1em;
+  1022→  line-height: 0.82;
+  1023→  float: left;
+  1024→  padding: 0.08em 0.14em 0 0;
+  1025→  color: color-mix(in srgb, var(--ink, #413f3d) 88%, var(--mauve));
+  1026→  font-weight: 500;
+  1027→}
+  1028→.story-link-chip {
+  1029→  font-family: var(--font-data), ui-monospace, monospace;
+  1030→  color: var(--foreground);
+  1031→  background: color-mix(in srgb, var(--rose) 22%, transparent);
+  1032→  border: 1px solid color-mix(in srgb, var(--rose) 45%, transparent);
+  1033→  transition: background 180ms ease, border-color 180ms ease;
+  1034→}
+  1035→.story-link-chip:hover {
+  1036→  background: color-mix(in srgb, var(--rose) 34%, transparent);
+  1037→  border-color: color-mix(in srgb, var(--rose) 60%, transparent);
+  1038→}
+  1039→.story-share-btn {
+  1040→  border-radius: 9999px;
+  1041→}
+  1042→.story-share-row {
+  1043→  /* the shared-state row on the ended session card */
+  1044→  border-top: 1px dashed color-mix(in srgb, var(--mauve) 30%, transparent);
+  1045→  margin-top: 1.25rem;
+  1046→  padding-top: 1.1rem;
+  1047→}
+  1048→
+  1049→/* r10 — story reading progress: a 2px hairline at the very top of the public
+  1050→   story page. The rose gradient fills as the visitor reads the night through. */
+  1051→.story-progress-track {
+  1052→  position: fixed;
+  1053→  top: 0;
+  1054→  left: 0;
+  1055→  right: 0;
+  1056→  height: 2px;
+  1057→  z-index: 40;
+  1058→  background: color-mix(in srgb, var(--mauve) 18%, transparent);
+  1059→  pointer-events: none;
+  1060→}
+  1061→.story-progress-fill {
+  1062→  display: block;
+  1063→  height: 100%;
+  1064→  width: 100%;
+  1065→  transform-origin: left center;
+  1066→  background: linear-gradient(90deg, var(--mauve), var(--rose));
+  1067→  transition: transform 120ms linear;
+  1068→}
+  1069→
+  1070→/* r10 — echo folded sheet: the second night sits slightly above the first
+  1071→   with a lifted edge, so the pair reads as two leaves of the same paper. */
+  1072→.echo-side-second {
+  1073→  position: relative;
+  1074→  z-index: 2;
+  1075→  box-shadow: -14px 0 34px -22px rgba(65, 63, 61, 0.45);
+  1076→  border-left-color: color-mix(in srgb, var(--mauve) 26%, transparent);
+  1077→}
+  1078→
+  1079→/* ============================================================
+  1080→   r10 — DREAM ECHO (two-dream comparison)
+  1081→   Two nights side by side. Shared motifs glow rose on both
+  1082→   sides; the drift meters show the emotional movement between
+  1083→   the nights (from = mauve, to = rose gradient).
+  1084→   ============================================================ */
+  1085→.echo-side {
+  1086→  border-radius: 0.9rem;
+  1087→}
+  1088→.echo-shared-chip {
+  1089→  background: color-mix(in srgb, var(--rose) 38%, transparent) !important;
+  1090→  border: 1px solid color-mix(in srgb, var(--rose) 70%, transparent);
+  1091→  color: var(--ink, #413f3d);
+  1092→  box-shadow: 0 2px 10px -4px color-mix(in srgb, var(--rose) 80%, transparent);
+  1093→}
+  1094→.echo-thread-row {
+  1095→  background: color-mix(in srgb, var(--mauve) 7%, transparent);
+  1096→  border: 1px solid color-mix(in srgb, var(--mauve) 16%, transparent);
+  1097→  transition: border-color 200ms ease, transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  1098→}
+  1099→.echo-thread-row:hover {
+  1100→  border-color: color-mix(in srgb, var(--mauve) 38%, transparent);
+  1101→  transform: translateX(2px);
+  1102→}
+  1103→.echo-thread-icon {
+  1104→  display: inline-flex;
+  1105→  align-items: center;
+  1106→  justify-content: center;
+  1107→  height: 1.6rem;
+  1108→  width: 1.6rem;
+  1109→  border-radius: 9999px;
+  1110→  margin-top: 0.15rem;
+  1111→  color: var(--foreground);
+  1112→  background: color-mix(in srgb, var(--rose) 35%, transparent);
+  1113→}
+  1114→.echo-drift-badge {
+  1115→  font-family: var(--font-data), ui-monospace, monospace;
+  1116→  font-size: 0.625rem;
+  1117→  letter-spacing: 0.08em;
+  1118→  padding: 0.1rem 0.45rem;
+  1119→  border-radius: 9999px;
+  1120→}
+  1121→.echo-drift-rose {
+  1122→  color: var(--ink, #413f3d);
+  1123→  background: color-mix(in srgb, var(--rose) 45%, transparent);
+  1124→}
+  1125→.echo-drift-mauve {
+  1126→  color: var(--ink, #413f3d);
+  1127→  background: color-mix(in srgb, var(--mauve) 22%, transparent);
+  1128→}
+  1129→.echo-drift-flat {
+  1130→  color: var(--muted-foreground);
+  1131→  background: color-mix(in srgb, var(--mauve) 12%, transparent);
+  1132→}
+  1133→.echo-drift-bar-from {
+  1134→  background: color-mix(in srgb, var(--mauve) 55%, transparent);
+  1135→}
+  1136→.echo-drift-bar-to {
+  1137→  background: linear-gradient(90deg, var(--rose), color-mix(in srgb, var(--rose) 70%, var(--mauve)));
+  1138→  transition: width 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  1139→}
+  1140→.echo-cta {
+  1141→  border-bottom: 1px dashed color-mix(in srgb, var(--mauve) 40%, transparent);
+  1142→  padding-bottom: 1px;
+  1143→}
+  1144→
+  1145→/* ============================================================
+  1146→   r10 — Print stylesheet (dream detail → paper record)
+  1147→   A dream record should print like a small archival document:
+  1148→   app chrome, atmospheric background and interactive-only
+  1149→   regions drop away; the serif typography, section numbering
+  1150→   and meters remain. Anything that must never print carries
+  1151→   .no-print; anything paper-only carries .print-only.
+  1152→   ============================================================ */
+  1153→.print-only {
+  1154→  display: none;
+  1155→}
+  1156→
+  1157→@media print {
+  1158→  @page {
+  1159→    margin: 18mm 16mm;
+  1160→  }
+  1161→
+  1162→  html,
+  1163→  body {
+  1164→    background: #fff !important;
+  1165→  }
+  1166→
+  1167→  /* app chrome never prints */
+  1168→  header,
+  1169→  footer,
+  1170→  .dream-field,
+  1171→  .no-print,
+  1172→  [data-print="hide"] {
+  1173→    display: none !important;
+  1174→  }
+  1175→
+  1176→  /* flatten the atmospheric surfaces onto paper */
+  1177→  .surface,
+  1178→  .surface-quiet {
+  1179→    background: #fff !important;
+  1180→    border: 1px solid #d9d1d2 !important;
+  1181→    box-shadow: none !important;
+  1182→  }
+  1183→
+  1184→  * {
+  1185→    box-shadow: none !important;
+  1186→    text-shadow: none !important;
+  1187→  }
+  1188→
+  1189→  /* keep each section whole; never strand a heading at a page bottom */
+  1190→  section,
+  1191→  .surface,
+  1192→  .surface-quiet {
+  1193→    break-inside: avoid;
+  1194→  }
+  1195→  h1,
+  1196→  h2,
+  1197→  h3 {
+  1198→    break-after: avoid;
+  1199→  }
+  1200→
+  1201→  /* paper-only masthead + colophon */
+  1202→  .print-only {
+  1203→    display: block;
+  1204→  }
+  1205→
+  1206→  a {
+  1207→    color: inherit;
+  1208→    text-decoration: none;
+  1209→  }
+  1210→}
+  1211→
+  1212→
+  1213→/* r10 watch-bust */
+  1214→
+  1215→/* ============================================================
+  1216→   r11 — Lexicon mute affordance + restore chips (Patterns view)
+  1217→   Each cloud word is wrapped in a .lexicon-cell; the small ×
+  1218→   fades in on hover/focus and mutes the word (the server
+  1219→   recomposes the cloud without it). Muted words rest below in
+  1220→   strikethrough-serif restore chips.
+  1221→   ============================================================ */
+  1222→.lexicon-cell {
+  1223→  position: relative;
+  1224→  display: inline-flex;
+  1225→  align-items: baseline;
+  1226→}
+  1227→.lexicon-x {
+  1228→  position: absolute;
+  1229→  top: -0.55rem;
+  1230→  right: -0.5rem;
+  1231→  display: inline-flex;
+  1232→  align-items: center;
+  1233→  justify-content: center;
+  1234→  height: 1rem;
+  1235→  width: 1rem;
+  1236→  border-radius: 9999px;
+  1237→  color: var(--muted-foreground);
+  1238→  background: color-mix(in srgb, var(--paper, #f2f1ef) 92%, var(--mauve));
+  1239→  border: 1px solid color-mix(in srgb, var(--mauve) 30%, transparent);
+  1240→  cursor: pointer;
+  1241→  opacity: 0;
+  1242→  transform: scale(0.8);
+  1243→  transition: opacity 160ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+  1244→    background 160ms ease, border-color 160ms ease, color 160ms ease;
+  1245→  z-index: 1;
+  1246→}
+  1247→.lexicon-cell:hover .lexicon-x,
+  1248→.lexicon-x:focus-visible {
+  1249→  opacity: 1;
+  1250→  transform: scale(1);
+  1251→}
+  1252→.lexicon-x:hover {
+  1253→  color: var(--ink, #413f3d);
+  1254→  background: color-mix(in srgb, var(--rose) 30%, transparent);
+  1255→  border-color: color-mix(in srgb, var(--rose) 65%, transparent);
+  1256→}
+  1257→.lexicon-x:disabled {
+  1258→  opacity: 0.5;
+  1259→  cursor: wait;
+  1260→}
+  1261→.lexicon-x:focus-visible {
+  1262→  outline: 2px solid var(--ring);
+  1263→  outline-offset: 1px;
+  1264→}
+  1265→.lexicon-restore-chip {
+  1266→  display: inline-flex;
+  1267→  align-items: center;
+  1268→  gap: 0.3rem;
+  1269→  font-family: var(--font-cormorant), Georgia, serif;
+  1270→  font-size: 0.95rem;
+  1271→  font-style: italic;
+  1272→  color: var(--muted-foreground);
+  1273→  padding: 0.15rem 0.6rem 0.2rem;
+  1274→  border-radius: 9999px;
+  1275→  background: color-mix(in srgb, var(--mauve) 10%, transparent);
+  1276→  border: 1px dashed color-mix(in srgb, var(--mauve) 35%, transparent);
+  1277→  transition: color 180ms ease, border-color 180ms ease, background 180ms ease, transform 180ms ease;
+  1278→  cursor: pointer;
+  1279→}
+  1280→.lexicon-restore-chip:hover {
+  1281→  color: var(--foreground);
+  1282→  border-color: color-mix(in srgb, var(--rose) 60%, transparent);
+  1283→  background: color-mix(in srgb, var(--rose) 14%, transparent);
+  1284→  transform: translateY(-1px);
+  1285→}
+  1286→.lexicon-restore-chip:disabled {
+  1287→  opacity: 0.5;
+  1288→  cursor: wait;
+  1289→}
+  1290→.lexicon-restore-chip:focus-visible {
+  1291→  outline: 2px solid var(--ring);
+  1292→  outline-offset: 2px;
+  1293→}
+  1294→
+  1295→/* ============================================================
+  1296→   r11 — Journal compare mode (dream echo entry)
+  1297→   Compare-two-nights selection: a rose ring + spring check
+  1298→   badge on chosen cards, and a floating pill bar that tracks
+  1299→   the two chosen nights above the footer.
+  1300→   ============================================================ */
+  1301→.echo-card-selected {
+  1302→  border-color: color-mix(in srgb, var(--rose) 65%, transparent) !important;
+  1303→  box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--rose) 45%, transparent),
+  1304→    0 14px 30px -18px color-mix(in srgb, var(--rose) 85%, transparent) !important;
+  1305→  background: color-mix(in srgb, var(--rose) 6%, transparent) !important;
+  1306→}
+  1307→.echo-check {
+  1308→  position: absolute;
+  1309→  top: 0.65rem;
+  1310→  right: 0.65rem;
+  1311→  display: inline-flex;
+  1312→  align-items: center;
+  1313→  justify-content: center;
+  1314→  height: 1.35rem;
+  1315→  width: 1.35rem;
+  1316→  border-radius: 9999px;
+  1317→  color: var(--paper, #f2f1ef);
+  1318→  background: linear-gradient(135deg, var(--rose), color-mix(in srgb, var(--rose) 60%, var(--mauve)));
+  1319→  box-shadow: 0 4px 10px -3px color-mix(in srgb, var(--rose) 80%, transparent);
+  1320→  z-index: 2;
+  1321→}
+  1322→.journal-echo-bar {
+  1323→  background: color-mix(in srgb, var(--paper, #f2f1ef) 96%, var(--mauve));
+  1324→  border: 1px solid color-mix(in srgb, var(--mauve) 28%, transparent);
+  1325→  box-shadow: 0 18px 40px -18px rgba(65, 63, 61, 0.4), 0 2px 8px -4px rgba(65, 63, 61, 0.18);
+  1326→  backdrop-filter: blur(6px);
+  1327→}
+  1328→.echo-sel-chip {
+  1329→  display: inline-flex;
+  1330→  align-items: center;
+  1331→  gap: 0.35rem;
+  1332→  font-family: var(--font-data), ui-monospace, monospace;
+  1333→  font-size: 0.65rem;
+  1334→  letter-spacing: 0.04em;
+  1335→  color: var(--foreground);
+  1336→  background: color-mix(in srgb, var(--rose) 16%, transparent);
+  1337→  border: 1px solid color-mix(in srgb, var(--rose) 42%, transparent);
+  1338→  padding: 0.2rem 0.6rem;
+  1339→  border-radius: 9999px;
+  1340→  max-width: 100%;
+  1341→}
+  1342→.echo-sel-idx {
+  1343→  display: inline-flex;
+  1344→  align-items: center;
+  1345→  justify-content: center;
+  1346→  height: 1rem;
+  1347→  width: 1rem;
+  1348→  font-size: 0.55rem;
+  1349→  border-radius: 9999px;
+  1350→  color: var(--paper, #f2f1ef);
+  1351→  background: var(--ink, #413f3d);
+  1352→}
+  1353→
+  1354→/* ============================================================
+  1355→   r11 — Story share expiry window (session view + public story)
+  1356→   The compact 7/30/forever segmented control on the ended
+  1357→   session card, and the quiet "closes …" chip readers see.
+  1358→   ============================================================ */
+  1359→.story-window-group {
+  1360→  background: color-mix(in srgb, var(--paper, #f2f1ef) 94%, var(--mauve));
+  1361→}
+  1362→.story-window-group button:focus-visible {
+  1363→  outline: 2px solid var(--ring);
+  1364→  outline-offset: 1px;
+  1365→}
+  1366→.story-expiry-chip {
+  1367→  color: var(--ink, #413f3d);
+  1368→  background: color-mix(in srgb, var(--mauve) 16%, transparent);
+  1369→  border: 1px solid color-mix(in srgb, var(--mauve) 34%, transparent);
+  1370→  padding: 0.15rem 0.55rem;
+  1371→  border-radius: 9999px;
+  1372→}
+  1373→
+  1374→/* r11 marker rule — verifies this stylesheet chunk reached the compiled CSS
+  1375→   (Turbopack staleness guard; see worklog r8/r10 notes). */
+  1376→.dw-r11-css-live::after {
+  1377→  content: "r11";
+  1378→}
+  1379→
+  1380→/* ============================================================
+  1381→   r12 — DREAM MEMORY GRAPH (Threads view) + Memory Echo + Dream DNA
+  1382→   ============================================================ */
+  1383→
+  1384→/* Thread card — the canonical-entity surface. Lifts on hover. */
+  1385→.thread-card {
+  1386→  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.32s ease, border-color 0.32s ease;
+  1387→}
+  1388→.thread-card:hover {
+  1389→  transform: translateY(-2px);
+  1390→  box-shadow: 0 18px 44px -28px rgba(65, 63, 61, 0.32);
+  1391→  border-color: color-mix(in srgb, var(--mauve, #b1a6a4) 42%, transparent);
+  1392→}
+  1393→
+  1394→/* First-appearance chip — compact, click-through to the dream. */
+  1395→.thread-chip {
+  1396→  display: inline-flex;
+  1397→  align-items: center;
+  1398→  padding: 0.3rem 0.7rem;
+  1399→  border-radius: 9999px;
+  1400→  font-size: 0.78rem;
+  1401→  line-height: 1;
+  1402→  color: var(--ink, #413f3d);
+  1403→  background: color-mix(in srgb, var(--paper, #f2f1ef) 80%, var(--mauve, #b1a6a4));
+  1404→  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 28%, transparent);
+  1405→  transition: background 0.2s ease, transform 0.2s ease;
+  1406→}
+  1407→.thread-chip:hover {
+  1408→  background: color-mix(in srgb, var(--paper, #f2f1ef) 65%, var(--mauve, #b1a6a4));
+  1409→  transform: translateY(-1px);
+  1410→}
+  1411→.thread-chip:focus-visible {
+  1412→  outline: 2px solid var(--ring);
+  1413→  outline-offset: 1px;
+  1414→}
+  1415→
+  1416→/* Evolution role chips — the chronological sequence of how this motif appeared. */
+  1417→.thread-role-chip {
+  1418→  display: inline-flex;
+  1419→  align-items: center;
+  1420→  padding: 0.18rem 0.6rem;
+  1421→  border-radius: 9999px;
+  1422→  font-size: 0.7rem;
+  1423→  font-family: var(--font-data, monospace);
+  1424→  letter-spacing: 0.02em;
+  1425→  color: var(--ink, #413f3d);
+  1426→  background: color-mix(in srgb, var(--mauve, #b1a6a4) 14%, transparent);
+  1427→  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 26%, transparent);
+  1428→}
+  1429→
+  1430→/* Per-mention row in the chronological list. */
+  1431→.thread-mention-row {
+  1432→  display: flex;
+  1433→  align-items: flex-start;
+  1434→  gap: 0.7rem;
+  1435→}
+  1436→.thread-mention-dot {
+  1437→  width: 8px;
+  1438→  height: 8px;
+  1439→  border-radius: 9999px;
+  1440→  margin-top: 0.45rem;
+  1441→  flex-shrink: 0;
+  1442→  box-shadow: 0 0 0 3px color-mix(in srgb, var(--paper, #f2f1ef) 60%, transparent);
+  1443→}
+  1444→.thread-role-tag {
+  1445→  display: inline-flex;
+  1446→  align-items: center;
+  1447→  padding: 0.1rem 0.45rem;
+  1448→  border-radius: 9999px;
+  1449→  font-size: 0.62rem;
+  1450→  font-family: var(--font-data, monospace);
+  1451→  letter-spacing: 0.05em;
+  1452→  text-transform: uppercase;
+  1453→  color: color-mix(in srgb, var(--ink, #413f3d) 70%, transparent);
+  1454→  background: color-mix(in srgb, var(--mauve, #b1a6a4) 10%, transparent);
+  1455→}
+  1456→
+  1457→/* Associated-entity chip (co-occurrence neighbourhood). */
+  1458→.thread-assoc-chip {
+  1459→  display: inline-flex;
+  1460→  align-items: center;
+  1461→  padding: 0.22rem 0.55rem;
+  1462→  border-radius: 9999px;
+  1463→  font-size: 0.72rem;
+  1464→  color: color-mix(in srgb, var(--ink, #413f3d) 85%, transparent);
+  1465→  background: color-mix(in srgb, var(--paper, #f2f1ef) 50%, transparent);
+  1466→  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 22%, transparent);
+  1467→}
+  1468→
+  1469→/* "Open the latest" affordance. */
+  1470→.thread-cta {
+  1471→  display: inline-flex;
+  1472→  align-items: center;
+  1473→  gap: 0.35rem;
+  1474→  font-size: 0.7rem;
+  1475→  font-family: var(--font-data, monospace);
+  1476→  letter-spacing: 0.05em;
+  1477→  text-transform: uppercase;
+  1478→  color: var(--ink, #413f3d);
+  1479→  padding: 0.3rem 0.55rem;
+  1480→  border-radius: 9999px;
+  1481→  transition: background 0.2s ease;
+  1482→}
+  1483→.thread-cta:hover {
+  1484→  background: color-mix(in srgb, var(--mauve, #b1a6a4) 18%, transparent);
+  1485→}
+  1486→
+  1487→/* The fear-arc sparkline — dream telemetry, restrained. */
+  1488→.thread-sparkline {
+  1489→  height: 28px;
+  1490→  display: block;
+  1491→  opacity: 0.9;
+  1492→}
+  1493→
+  1494→/* ---- MEMORY ECHO (Arcade) ---- */
+  1495→/* A subtle, restrained aside shown inside the Arcade when a turn references
+  1496→   a motif that also appears in a prior dream. Never interrupts gameplay;
+  1497→   appears below the scene as a quiet margin-note. */
+  1498→.memory-echo {
+  1499→  position: relative;
+  1500→  margin-top: 1rem;
+  1501→  padding: 0.85rem 1rem 0.85rem 2rem;
+  1502→  border-radius: 0.5rem;
+  1503→  background: color-mix(in srgb, var(--mauve, #b1a6a4) 10%, var(--paper, #f2f1ef));
+  1504→  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 26%, transparent);
+  1505→  font-size: 0.82rem;
+  1506→  color: color-mix(in srgb, var(--ink, #413f3d) 82%, transparent);
+  1507→  line-height: 1.5;
+  1508→}
+  1509→.memory-echo::before {
+  1510→  content: "";
+  1511→  position: absolute;
+  1512→  left: 0.85rem;
+  1513→  top: 0.85rem;
+  1514→  bottom: 0.85rem;
+  1515→  width: 2px;
+  1516→  background: linear-gradient(180deg, var(--rose, #d8cfd0), color-mix(in srgb, var(--mauve, #b1a6a4) 60%, transparent));
+  1517→  border-radius: 9999px;
+  1518→}
+  1519→.memory-echo-label {
+  1520→  display: inline-flex;
+  1521→  align-items: center;
+  1522→  gap: 0.3rem;
+  1523→  font-family: var(--font-data, monospace);
+  1524→  font-size: 0.6rem;
+  1525→  letter-spacing: 0.12em;
+  1526→  text-transform: uppercase;
+  1527→  color: color-mix(in srgb, var(--mauve, #b1a6a4) 90%, var(--ink, #413f3d));
+  1528→  margin-bottom: 0.25rem;
+  1529→}
+  1530→
+  1531→/* ---- DREAM DNA (compact visual signature per dream) ---- */
+  1532→/* A small SVG glyph encoding the dream's emotional signature + dominant
+  1533→   motifs + mood. Lightweight, reliable, no external assets. */
+  1534→.dream-dna {
+  1535→  display: inline-block;
+  1536→  vertical-align: middle;
+  1537→}
+  1538→.dream-dna-frame {
+  1539→  background: color-mix(in srgb, var(--paper, #f2f1ef) 60%, transparent);
+  1540→  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 22%, transparent);
+  1541→  border-radius: 0.5rem;
+  1542→  padding: 0.65rem;
+  1543→}
+  1544→.dream-dna:hover {
+  1545→  transform: translateY(-1px);
+  1546→  transition: transform 0.2s ease;
+  1547→}
+  1548→
+  1549→/* r12 marker rule — Turbopack CSS staleness guard. */
+  1550→.dw-r12-css-live::after {
+  1551→  content: "r12";
+  1552→}
+  1553→
+  1554→/* ===========================================================
+  1555→   m3 — Reduced motion
+  1556→   When the user has expressed a preference for reduced motion,
+  1557→   neutralize the ambient decorative animations (drifting orbs,
+  1558→   floating fragments, the brand-mark pulse, the film-grain veil,
+  1559→   the streak dot, the whisper + streaming text breath). Functional
+  1560→   feedback (loading spinners, state meters, recording indicators,
+  1561→   the streaming caret, shimmer skeletons, hold-acknowledgment
+  1562→   dots) is preserved so the app still communicates state changes —
+  1563→   only the ambient atmosphere becomes still.
+  1564→   =========================================================== */
+  1565→@media (prefers-reduced-motion: reduce) {
+  1566→  .dream-orb,
+  1567→  .fragment,
+  1568→  .drift-orb,
+  1569→  .pulse-soft,
+  1570→  .streak-pulse-dot,
+  1571→  .whisper,
+  1572→  .streaming-text,
+  1573→  .audio-loading-bar {
+  1574→    animation: none !important;
+  1575→  }
+  1576→  /* Hide the floating dream fragments entirely — they exist only as ambient
+  1577→     decoration; under reduced motion they would sit static and read as noise. */
+  1578→  .fragment {
+  1579→    display: none !important;
+  1580→  }
+  1581→  /* Disable the film-grain veil's subtle repaint — the layer becomes a flat
+  1582→     static surface. */
+  1583→  .grain::after {
+  1584→    display: none !important;
+  1585→  }
+  1586→  /* Keep orbs at a static, low opacity so the field still has atmosphere. */
+  1587→  .dream-orb {
+  1588→    opacity: 0.35 !important;
+  1589→  }
+  1590→  /* Restrain the one-shot entrance sweeps so content appears at its final
+  1591→     position rather than sliding in. Transitions on hover/focus are
+  1592→     preserved — those communicate state, not motion. */
+  1593→  .rise,
+  1594→  .meter-fill {
+  1595→    animation: none !important;
+  1596→  }
+  1597→}
+  1598→

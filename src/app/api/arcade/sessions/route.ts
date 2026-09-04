@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { initialState } from "@/lib/simulation";
 import type { ArcadeMode } from "@/lib/types";
 import { z } from "zod";
@@ -21,6 +21,7 @@ export async function GET() {
   } catch {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const db = await getRepository();
   const sessions = await db.arcadeSession.findMany({
     where: { userId },
     include: {
@@ -57,6 +58,7 @@ export async function POST(req: Request) {
   };
 
   // ownership check on the dream
+  const db = await getRepository();
   const dream = await db.dream.findFirst({
     where: { id: dreamId, userId },
     include: { analysis: true, motifs: true },

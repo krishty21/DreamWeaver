@@ -2,7 +2,7 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
-import { Map, Loader2, Sparkles, TrendingUp, TrendingDown, Minus, Feather, X, RotateCcw } from "lucide-react";
+import { Map, Loader2, TrendingUp, TrendingDown, Minus, Feather, X, RotateCcw } from "lucide-react";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import type { PatternReport, LexiconWord } from "@/lib/types";
@@ -74,7 +74,6 @@ export function PatternsView() {
           onClick={() => navigate("capture")}
           className="mt-6 inline-flex items-center gap-2 px-6 py-3 rounded-full bg-foreground text-background text-sm hover:opacity-90 transition"
         >
-          <Sparkles className="h-4 w-4" strokeWidth={1.6} />
           Capture a dream
         </button>
       </div>

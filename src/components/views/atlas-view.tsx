@@ -5,7 +5,6 @@ import { useApp } from "@/lib/store";
 import {
   Globe,
   Loader2,
-  Sparkles,
   Users,
   MapPin,
   Footprints,
@@ -141,7 +140,6 @@ export function AtlasView() {
           onClick={() => navigate("capture")}
           className="mt-6 inline-flex items-center gap-2 px-6 py-3 rounded-full bg-foreground text-background text-sm hover:opacity-90 transition"
         >
-          <Sparkles className="h-4 w-4" strokeWidth={1.6} />
           Capture a dream
         </button>
       </div>
@@ -162,7 +160,7 @@ export function AtlasView() {
         <p className="mt-3 text-sm sm:text-base text-muted-foreground pretty max-w-2xl">
           {atlas.length} recorded element{atlas.length === 1 ? "" : "s"} across{" "}
           {report.totalDreams} dream{report.totalDreams === 1 ? "" : "s"}. The atlas
-          collects everything Gemini has ever surfaced from your memory — people,
+          collects everything ever surfaced from your memory — people,
           places, actions, and the motifs that keep coming back. Computed app-side,
           never invented.
         </p>

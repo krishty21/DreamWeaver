@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { z } from "zod";
 
 const bodySchema = z.object({
@@ -24,6 +24,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const { id } = await params;
 
+  const db = await getRepository();
   const dream = await db.dream.findFirst({ where: { id, userId }, include: { analysis: { select: { id: true } } } });
   if (!dream) return NextResponse.json({ error: "dream not found" }, { status: 404 });
   if (!dream.analysis) {
@@ -86,6 +87,7 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   }
   const { id } = await params;
 
+  const db = await getRepository();
   const dream = await db.dream.findFirst({ where: { id, userId } });
   if (!dream) return NextResponse.json({ error: "dream not found" }, { status: 404 });
 

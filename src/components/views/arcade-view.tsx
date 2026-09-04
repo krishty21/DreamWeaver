@@ -3,7 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp, View } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Compass, ArrowLeft, Loader2, Sparkles, Play, RotateCcw, Swords, Moon } from "lucide-react";
+import { Compass, ArrowLeft, Loader2, Play, RotateCcw, Swords, Moon } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -57,7 +57,7 @@ export function ArcadeView() {
               Re-enter your dreams
             </h1>
             <p className="mt-3 text-sm sm:text-base text-muted-foreground pretty max-w-xl">
-              Past dreams become interactive worlds. Gemini continues the scene in context;
+              Past dreams become interactive worlds. The scene continues in context;
               your decisions shape a stateful simulation grounded in your own memory.
             </p>
           </motion.div>
@@ -92,7 +92,7 @@ export function ArcadeView() {
                   Capture a dream first — then return here to re-enter it.
                 </p>
                 <Button onClick={() => navigate("capture")} className="mt-5 h-11 bg-foreground text-background hover:opacity-90">
-                  <Sparkles className="h-4 w-4" strokeWidth={1.6} /> Capture a dream
+                  Capture a dream
                 </Button>
               </div>
             ) : (

@@ -2,7 +2,7 @@
 
 import { useApp } from "@/lib/store";
 import { DreamMark } from "@/components/shell/top-nav";
-import { Sparkles, Moon, Compass, Map, BookOpenText, Lock, ShieldCheck, Layers } from "lucide-react";
+import { Moon, Compass, Map, Lock, Layers } from "lucide-react";
 import { motion } from "framer-motion";
 
 const fade = {
@@ -59,10 +59,6 @@ export function LandingView() {
           custom={0}
           className="text-center"
         >
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border bg-card/60 text-xs tracking-caps uppercase text-muted-foreground mb-8">
-            <span className="h-1.5 w-1.5 rounded-full bg-foreground pulse-soft" />
-            A persistent memory for your dreams
-          </div>
           <h1 className="font-display tracking-display balance text-5xl sm:text-7xl leading-[0.95] text-foreground">
             Your dreams disappear
             <br />
@@ -72,7 +68,7 @@ export function LandingView() {
             DreamWeaver lets you keep them.
           </p>
           <p className="mx-auto mt-7 max-w-xl text-base sm:text-lg text-muted-foreground pretty leading-relaxed">
-            Capture a fragment. Gemini reads its shape — the emotions, motifs, the things that
+            Capture a fragment. Its shape is read — the emotions, motifs, the things that
             return. Your dreams become a single, evolving world you can re-enter at any time.
           </p>
           <div className="mt-9 flex items-center justify-center gap-3">
@@ -80,7 +76,6 @@ export function LandingView() {
               onClick={() => navigate("auth", { authMode: "signup" })}
               className="group inline-flex items-center gap-2 px-6 py-3 rounded-full bg-foreground text-background text-sm hover:opacity-90 transition focus-ring"
             >
-              <Sparkles className="h-4 w-4" strokeWidth={1.6} />
               Start your dream memory
             </button>
             <button
@@ -217,7 +212,6 @@ export function LandingView() {
             onClick={() => navigate("auth", { authMode: "signup" })}
             className="mt-8 inline-flex items-center gap-2 px-6 py-3 rounded-full bg-foreground text-background text-sm hover:opacity-90 transition focus-ring"
           >
-            <Sparkles className="h-4 w-4" strokeWidth={1.6} />
             Open your dream memory
           </button>
         </motion.div>
@@ -232,7 +226,6 @@ export function LandingView() {
           </div>
           <div className="flex items-center gap-4">
             <span>AI reflection is advisory, never clinical.</span>
-            <span className="hidden sm:inline">Gemini-style LLM · Next.js · Prisma</span>
           </div>
         </div>
       </footer>
@@ -250,13 +243,13 @@ const LAYERS = [
   {
     tag: "Intelligence",
     title: "Structured dream memory",
-    body: "Gemini reads the dream and derives its emotions, motifs, people, places, lucidity and uncertainty. Confidence is shown where it exists, and so is its absence.",
+    body: "The dream is read and its emotions, motifs, people, places, lucidity and uncertainty are derived. Confidence is shown where it exists, and so is its absence.",
     icon: Map,
   },
   {
     tag: "Arcade",
     title: "Re-enter your dream",
-    body: "Past dreams become interactive worlds. Make a choice; Gemini continues the scene in context. Your decisions shape a stateful simulation — grounded in your own memory.",
+    body: "Past dreams become interactive worlds. Make a choice; the scene continues in context. Your decisions shape a stateful simulation — grounded in your own memory.",
     icon: Compass,
   },
 ];

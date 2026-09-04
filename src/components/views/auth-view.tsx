@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,6 +15,7 @@ export function AuthView() {
   const authMode = useApp((s) => s.authMode);
   const navigate = useApp((s) => s.navigate);
   const { toast } = useToast();
+  const { update: updateSession } = useSession();
 
   const [mode, setMode] = useState<"signin" | "signup">(authMode);
   const [email, setEmail] = useState("");
@@ -22,8 +23,25 @@ export function AuthView() {
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Minimal, non-enumerating client-side validation. Catches the obvious
+  // mistakes before they reach the network so the user gets immediate, specific
+  // feedback and the server only sees well-formed requests. Duplicate-email
+  // and wrong-password are still resolved server-side and returned as a single
+  // generic "could not sign in" to avoid account enumeration.
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+
+    if (!EMAIL_RE.test(email.trim())) {
+      toast({ title: "Enter a valid email", description: "Use the form you@example.com.", variant: "destructive" });
+      return;
+    }
+    if (password.length < 6) {
+      toast({ title: "Password is too short", description: "At least 6 characters.", variant: "destructive" });
+      return;
+    }
+
     setLoading(true);
     const res = await signIn("credentials", {
       email,
@@ -32,20 +50,29 @@ export function AuthView() {
       mode,
       redirect: false,
     });
-    setLoading(false);
     if (res?.error) {
+      setLoading(false);
+      // The server returns a single generic CredentialsSignin for any failure.
+      // For sign-in we never reveal whether the email exists. For sign-up the
+      // only remaining server-side failure (after client validation) is a
+      // duplicate email, which the user just typed — so naming it is not
+      // enumeration.
       toast({
         title: mode === "signup" ? "Could not create account" : "Sign in failed",
         description:
           mode === "signup"
-            ? "That email may already be in use, or your password is too short."
-            : "Check your email and password and try again.",
+            ? "An account with this email already exists."
+            : "Email or password is incorrect.",
         variant: "destructive",
       });
       return;
     }
-    // trigger a reload so the session provider picks up the new JWT
-    window.location.reload();
+    // Refresh the session provider in-place (no brute-force page reload), then
+    // route to the dashboard. useAuthRouting watches `status` and will keep
+    // the user on dashboard once the provider flips to "authenticated".
+    try { await updateSession(); } catch {}
+    navigate("dashboard");
+    setLoading(false);
   }
 
   return (

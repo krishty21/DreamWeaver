@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 
 // GET /api/shared/session/[token] — PUBLIC read-only view of one arcade
 // session's STORY (ended sessions only).
@@ -21,6 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
+  const db = await getRepository();
   const session = await db.arcadeSession.findFirst({
     where: { shareToken: token },
     include: {

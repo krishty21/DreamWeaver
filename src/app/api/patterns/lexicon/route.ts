@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { z } from "zod";
 
 // r11 — Lexicon ignore list. The Patterns lexicon cloud surfaces the words a
@@ -26,6 +26,7 @@ export async function GET() {
   } catch {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
+  const db = await getRepository();
   const rows = await db.lexiconIgnore.findMany({
     where: { userId },
     orderBy: { createdAt: "desc" },
@@ -55,6 +56,7 @@ export async function POST(req: Request) {
   if (!WORD_RE.test(word)) {
     return NextResponse.json({ error: "invalid word" }, { status: 400 });
   }
+  const db = await getRepository();
   await db.lexiconIgnore.upsert({
     where: { userId_word: { userId, word } },
     create: { userId, word },
@@ -81,6 +83,7 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "invalid word" }, { status: 400 });
   }
   const word = parsed.data.word.toLowerCase().trim();
+  const db = await getRepository();
   await db.lexiconIgnore.deleteMany({ where: { userId, word } });
   return NextResponse.json({ ok: true, word });
 }

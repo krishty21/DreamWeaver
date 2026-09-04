@@ -1,0 +1,97 @@
+# DreamWeaver — Cloud Run service manifest (production).
+#
+# Applied via `gcloud run services replace deploy/cloud-run.yaml` (or
+# `gcloud run deploy --source=.` which generates an equivalent resource).
+# The service account attached here must already exist and have the
+# IAM roles listed below. Secrets are mounted via cloudrun.secrets
+# (a newer alternative to --set-secrets; both are valid).
+#
+# This file is intentionally a real, deployable spec; it was NOT applied
+# in the sandbox (no Google Cloud credentials available).
+#
+# Required IAM roles on ${SERVICE_ACCOUNT}:
+#   - roles/datastore.user                 (Firestore R/W + queries)
+#   - roles/firebaseauth.admin             (verify ID tokens; or use a
+#                                           more narrowly-scoped custom role)
+#   - roles/secretmanager.secretAccessor   (NEXTAUTH_SECRET, GEMINI_API_KEY)
+#   - roles/artifactregistry.reader        (pull the built image)
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: dreamweaver
+  labels:
+    cloud.googleapis.com/location: us-central1
+spec:
+  template:
+    metadata:
+      annotations:
+        # 0 → scale to zero between requests (cheap); 80 → Cloud Run's
+        # default per-instance concurrency.
+        autoscaling.knative.dev/min-scale: "0"
+        autoscaling.knative.dev/max-scale: "10"
+        run.googleapis.com/execution-environment: gen2
+    spec:
+      containerConcurrency: 80
+      timeoutSeconds: 300
+      serviceAccountName: dreamweaver-runner@YOUR_FIREBASE_PROJECT_ID.iam.gserviceaccount.com
+      containers:
+        - name: web
+          image: us-central1-docker.pkg.dev/YOUR_FIREBASE_PROJECT_ID/dreamweaver/dreamweaver:latest
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            # ---- THE FOUR BACKEND SWITCHES ----
+            - name: DATA_BACKEND
+              value: "firestore"
+            - name: AI_BACKEND
+              value: "gemini"
+            - name: AUTH_BACKEND
+              value: "firebase"
+            - name: SECRETS_BACKEND
+              value: "gsm"
+            # ---- PROJECT IDENTITY ----
+            - name: FIREBASE_PROJECT_ID
+              value: "YOUR_FIREBASE_PROJECT_ID"
+            - name: GCLOUD_PROJECT
+              value: "YOUR_FIREBASE_PROJECT_ID"
+            - name: NEXTAUTH_URL
+              value: "https://dreamweaver.us-central1.run.app"
+            # ---- PUBLIC FIREBASE WEB CONFIG (browser-side; safe to expose) ----
+            - name: NEXT_PUBLIC_FIREBASE_API_KEY
+              value: "YOUR_FIREBASE_WEB_API_KEY"
+            - name: NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+              value: "YOUR_FIREBASE_PROJECT_ID.firebaseapp.com"
+            - name: NEXT_PUBLIC_FIREBASE_PROJECT_ID
+              value: "YOUR_FIREBASE_PROJECT_ID"
+            # ---- SECRETS (mounted from Secret Manager by the SA) ----
+            - name: NEXTAUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: NEXTAUTH_SECRET
+                  key: latest
+            - name: GEMINI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: GEMINI_API_KEY
+                  key: latest
+          resources:
+            limits:
+              cpu: "1"
+              memory: "1Gi"
+          startupProbe:
+            httpGet:
+              path: /api/me
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/me
+              port: 8080
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3

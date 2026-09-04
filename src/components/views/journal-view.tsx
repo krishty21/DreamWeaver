@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   ArrowRight,
   Loader2,
-  Sparkles,
   Compass,
   Inbox,
   FileDown,
@@ -281,7 +280,6 @@ export function JournalView() {
             onClick={() => navigate("capture")}
             className="h-11 bg-foreground text-background hover:opacity-90"
           >
-            <Sparkles className="h-4 w-4" strokeWidth={1.6} />
             Capture a dream
           </Button>
         </div>
@@ -784,11 +782,9 @@ function EmptyJournal({ onCapture }: { onCapture: () => void }) {
         No dreams recorded yet.
       </h3>
       <p className="mt-2 text-sm text-muted-foreground pretty max-w-md mx-auto">
-        Capture your first dream — fragments, contradictions, half-images — and Gemini will
-        read its shape for you.
+        Capture your first dream — fragments, contradictions, half-images — and its shape will be read.
       </p>
       <Button onClick={onCapture} className="mt-6 h-11 px-6 bg-foreground text-background hover:opacity-90">
-        <Sparkles className="h-4 w-4" strokeWidth={1.6} />
         Capture your first dream
       </Button>
     </motion.div>

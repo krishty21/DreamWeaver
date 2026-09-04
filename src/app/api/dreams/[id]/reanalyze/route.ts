@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { analyzeDream } from "@/lib/ai";
 import { reconcileUserGraph } from "@/lib/memory-graph";
 import type { DreamAnalysisData } from "@/lib/types";
@@ -17,6 +17,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   }
   const { id } = await params;
 
+  const db = await getRepository();
   const dream = await db.dream.findFirst({
     where: { id, userId },
     include: { analysis: true, motifs: true },

@@ -14,7 +14,7 @@
 // SECURITY: every query is scoped by userId. The reconciler never crosses users.
 // A user cannot retrieve another user's entities by any input.
 
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import type { DreamThread, EntityMentionPoint, MotifEvolution, Mood } from "@/lib/types";
 
 // ----------------------------------------------------------------------------
@@ -140,6 +140,7 @@ type ReconcileResult = {
 };
 
 export async function reconcileUserGraph(userId: string): Promise<ReconcileResult> {
+  const db = await getRepository();
   // Load all the user's motifs + their dreams (we need dream date/mood/fear
   // for the mention telemetry snapshot).
   const motifs = await db.motif.findMany({
@@ -381,6 +382,7 @@ function describeEvolution(roles: string[], fearArc: number[]): MotifEvolution {
 }
 
 export async function computeThreads(userId: string): Promise<DreamThread[]> {
+  const db = await getRepository();
   const entities = await db.entity.findMany({
     where: { userId },
     include: {
@@ -494,6 +496,7 @@ export async function computeMemoryEcho(args: {
   note: string;
 } | null> {
   if (args.sceneMotifs.length === 0) return null;
+  const db = await getRepository();
   const currentDream = await db.dream.findFirst({
     where: { id: args.currentDreamId, userId: args.userId },
     select: { id: true, createdAt: true, title: true },

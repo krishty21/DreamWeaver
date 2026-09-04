@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map as MapIcon, ArrowRight, TrendingUp, Gamepad2, CalendarCheck2, BookOpenText, Quote, Clock, TrendingDown, Waypoints, CalendarRange } from "lucide-react";
+import { Compass, Moon, MoonStar, Sunrise, Sun, Map as MapIcon, ArrowRight, TrendingUp, Gamepad2, CalendarCheck2, BookOpenText, Quote, Clock, TrendingDown, Waypoints, CalendarRange } from "lucide-react";
 import { motion } from "framer-motion";
 import { useMemo } from "react";
 import { MOOD_COLORS } from "@/lib/moods";
@@ -321,7 +321,6 @@ export function DashboardView() {
           onClick={() => navigate("capture")}
           className="h-11 px-6 bg-foreground text-background hover:opacity-90 self-start sm:self-end"
         >
-          <Sparkles className="h-4 w-4" strokeWidth={1.6} />
           Capture a dream
         </Button>
       </motion.section>
@@ -390,7 +389,6 @@ export function DashboardView() {
                 {tonightPrompt}
               </p>
               <div className="mt-3 inline-flex items-center gap-1.5 text-xs text-muted-foreground group-hover:text-foreground transition">
-                <Sparkles className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
                 Open in capture
                 <ArrowRight className="h-3 w-3 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition" strokeWidth={1.6} aria-hidden="true" />
               </div>
@@ -864,10 +862,9 @@ function FirstDream({ onCapture }: { onCapture: () => void }) {
         Your dream landscape is empty.
       </h2>
       <p className="mt-2 text-sm text-muted-foreground pretty max-w-md mx-auto">
-        Capture your first dream. Fragments are fine — Gemini reads its shape after.
+        Capture your first dream. Fragments are fine — its shape is read after.
       </p>
       <Button onClick={onCapture} className="mt-6 h-11 px-6 bg-foreground text-background hover:opacity-90">
-        <Sparkles className="h-4 w-4" strokeWidth={1.6} />
         Begin
       </Button>
     </motion.div>

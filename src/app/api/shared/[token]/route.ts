@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 
 // GET /api/shared/[token] — PUBLIC read-only view of one dream's reflection.
 //
@@ -18,6 +18,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ token: 
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
 
+  const db = await getRepository();
   const dream = await db.dream.findFirst({
     where: { shareToken: token },
     include: { analysis: true, user: { select: { name: true } } },

@@ -63,28 +63,27 @@ Three modes in the Arcade:
 
 ---
 
-## Architecture (sandbox-adapted)
+## Architecture (dual-adapter; production-ready + local-QA)
 
-This repository runs in a constrained cloud-sandbox environment. The
-production target described in the original build directive — Firebase
-Authentication, Cloud Firestore, Google Cloud Secret Manager, Google
-Cloud Run, and the Gemini API directly — is adapted here to the sandbox's
-available stack, with the security and isolation properties preserved at
-every layer:
+DreamWeaver runs on a **dual data + AI + auth stack** switchable via
+environment variables. The local dev + sandbox QA path needs ZERO
+Google Cloud credentials. The production path uses the real Google
+stack (Firestore, Firebase Auth, Gemini-direct, Secret Manager, Cloud
+Run) with official SDKs.
 
-| Directive requirement | Sandbox implementation | What's preserved |
-|---|---|---|
-| Firebase Authentication | NextAuth.js v4 Credentials provider, bcrypt-hashed passwords in Prisma | Per-user identity; session-enforced auth on every API route |
-| Cloud Firestore | Prisma + SQLite with server-side ownership enforcement on every query | Per-user isolated data; no cross-user access by any input |
-| Gemini API | `z-ai-web-dev-sdk` LLM skill, backend-only, structured JSON + zod validation | Real multi-turn Gemini calls; secrets never shipped to client |
-| Google Cloud Secret Manager | Server-only SDK credentials; never in the client bundle | Secrets never exposed to the browser |
-| Google Cloud Run | Next.js 16 dev server on port 3000 | Single deployable process |
+| Layer | Local + sandbox QA | Production (Google Cloud Run) | Switch env |
+|---|---|---|---|
+| Data | Prisma + SQLite | `firebase-admin` Firestore | `DATA_BACKEND` (`sqlite` \| `firestore`) |
+| AI | `z-ai-web-dev-sdk` | `@google/genai` direct | `AI_BACKEND` (`zai` \| `gemini`) |
+| Auth | NextAuth v4 Credentials + bcrypt | Firebase Auth (ID-token verify → NextAuth JWT) | `AUTH_BACKEND` (`nextauth` \| `firebase`) |
+| Secrets | `process.env` | `@google-cloud/secret-manager` | `SECRETS_BACKEND` (`env` \| `gsm`) |
+| Hosting | `next dev` on :3000 | Cloud Run (managed) | n/a |
 
-The system rules of this sandbox require NextAuth, Prisma/SQLite, and
-the z-ai-web-dev-sdk; they cannot be replaced with Firebase/Firestore/
-Cloud Run. The adaptation is documented honestly here and in
-`/home/z/my-project/worklog.md` so a judge can evaluate what's real vs.
-what's adapted.
+Both paths implement the **same** `Repository` interface (`src/lib/data/repository.ts`)
+and the **same** `AIBackend` interface (`src/lib/ai/registry.ts`). The API
+routes call `getRepository()` / `getAI()` once at the top of the request
+and the active backend is wired transparently. Response shapes are
+identical; the routes do not know which backend served the request.
 
 ### The single most important technical principle
 
@@ -95,8 +94,53 @@ identify intent, and propose choices and consequences. It must never be
 the authoritative source of persistent application state. The backend
 validates, clamps, and applies every model-proposed change. Endings are
 decided by authoritative state thresholds, not by model text. This
-separation is demonstrable in the code (`src/lib/ai.ts`,
-`src/lib/simulation.ts`, `src/app/api/arcade/sessions/[id]/turn/route.ts`).
+separation is demonstrable in the code:
+
+- `src/lib/ai/shared.ts` — zod schemas + clamp + repair logic shared by
+  both AI backends (zai + gemini). Every model output passes through
+  `analysisSchema.parse` / `turnSchema.parse`, then through post-parse
+  shape helpers that clamp numeric ranges, truncate strings, and
+  normalise labels.
+- `src/lib/simulation.ts` — the authoritative Arcade state machine.
+  `applyDelta()` clamps AI-proposed deltas to ±25/turn per meter and
+  0–100 ranges; `ending` is decided by authoritative thresholds
+  (`stability ≤ 8 || fear ≥ 98 → collapse`; `agency ≥ 85 && lucidity ≥
+  75 → control`; `turn ≥ 18 → unresolved`).
+- `src/app/api/dreams/route.ts` (POST) — the route computes
+  `historicalConnections` app-side from prior motifs (the model is
+  explicitly told NOT to include that field), then writes the analysis.
+- `src/app/api/arcade/sessions/[id]/turn/route.ts` — the route passes
+  the model's `proposedDelta` through `applyDelta()`; the model can
+  propose, never decide.
+
+### Repository contract — ownership scoping
+
+Both adapters enforce per-user isolation in every query:
+
+- **Prisma adapter** — passes `where.userId` through to Prisma. The
+  routes already scope every `findFirst` / `update` / `delete` by
+  `userId`; the userId comes from `requireUser()` (verified NextAuth
+  session) or `verifyFirebaseIdToken()` (verified Firebase ID token),
+  never from the client.
+- **Firestore adapter** — reads `where.userId` (or `data.userId` on
+  create) from the args and applies it as a composite filter on every
+  user-scoped collection. If `userId` is missing on a user-scoped
+  operation, the adapter throws (the only safe assumption is "the route
+  forgot to scope it"). A user cannot retrieve or modify another user's
+  records by any input — the composite filter excludes foreign rows
+  even if the client supplied a foreign id.
+
+### Public-by-token reads (sharing)
+
+The two public share endpoints (`/api/shared/[token]` for dreams,
+`/api/shared/session/[token]` for arcade stories) call
+`dream.findFirst({ where: { shareToken } })` and
+`arcadeSession.findFirst({ where: { shareToken } })` WITHOUT a userId.
+These are the only user-scoped methods allowed to omit userId — the
+share token is the unguessable secret (48 hex chars); possession grants
+read access to that one sanitised payload only. The routes never expose
+raw model output, internal ids, the dreamer's email, or any other
+dream/session.
 
 ---
 
@@ -107,22 +151,37 @@ prisma/schema.prisma          # User, Dream, DreamAnalysis, Motif, Entity,
                              # EntityMention, ArcadeSession, SessionTurn,
                              # LexiconIgnore, Account, Session
 src/lib/
-  ai.ts                      # Gemini calls + zod validation + repair+retry
-  simulation.ts              # Authoritative state machine (applyDelta + endings)
-  memory-graph.ts            # Canonical-entity clustering + threads + evolution
-  patterns.ts                # Longitudinal pattern report (app-side)
-  rate-limit.ts              # In-memory rate limiter + single-flight lock
-  prompts.ts                 # Prompt engineering (injection-fenced)
-  types.ts                   # Shared types
-  auth.ts                    # requireUser() server helper
-  store.ts                   # Zustand SPA view-routing
+  data/
+    repository.ts             # The Repository contract + getRepository() factory
+    prisma-adapter.ts         # Local path: delegates to PrismaClient
+    firestore-adapter.ts      # Production path: firebase-admin Firestore
+  ai/
+    registry.ts               # AIBackend interface + getAI() factory
+    shared.ts                 # zod schemas + clamp + repair (used by both backends)
+    zai-backend.ts            # Local path: z-ai-web-dev-sdk
+    gemini-backend.ts         # Production path: @google/genai direct
+  ai.ts                      # Public entrypoint — thin delegator to getAI()
+  simulation.ts               # Authoritative state machine (applyDelta + endings)
+  memory-graph.ts             # Canonical-entity clustering + threads + evolution
+  patterns.ts                 # Longitudinal pattern report (app-side)
+  rate-limit.ts               # In-memory rate limiter + single-flight lock
+  prompts.ts                  # Prompt engineering (injection-fenced)
+  types.ts                    # Shared types
+  auth.ts                     # requireUser() — works for both auth backends
+  secrets.ts                  # getSecret() — env | Secret Manager
+  store.ts                    # Zustand SPA view-routing
 src/app/api/
-  dreams/                    # GET/POST/DELETE + reanalyze + share
-  arcade/sessions/           # CRUD + turn (streaming + non-streaming) + share
-  threads/                   # Dream Memory Graph (canonical entities + evolution)
-  patterns/                  # Pattern report + lexicon mute/restore
-  shared/                    # Public read-only dream + session-story endpoints
-  asr/  tts/  me/  auth/     # Voice capture, narration, profile, NextAuth
+  dreams/                     # GET/POST/DELETE + reanalyze + share
+  arcade/sessions/            # CRUD + turn (streaming + non-streaming) + share
+  threads/                    # Dream Memory Graph (canonical entities + evolution)
+  patterns/                   # Pattern report + lexicon mute/restore
+  shared/                     # Public read-only dream + session-story endpoints
+  asr/  tts/  me/  auth/      # Voice capture, narration, profile, NextAuth + Firebase login
+  auth/firebase-login/        # POST — verify Firebase ID token, issue NextAuth JWT
+deploy/cloud-run.yaml         # Cloud Run service manifest
+cloudbuild.yaml               # Cloud Build pipeline (build, push, deploy)
+Dockerfile                    # Multi-stage Next.js 16 standalone (non-root, port 8080)
+.env.example                  # PLACEHOLDERS ONLY — copy to .env
 src/components/views/        # Landing, Auth, Dashboard, Capture, Journal,
                              # DreamDetail, Patterns, Atlas, Threads, Arcade,
                              # ArcadeSession, Profile, SharedDream, Story, Echo
@@ -134,16 +193,20 @@ src/components/shell/        # TopNav, Footer, CommandPalette, DreamBackground
 
 ## Security model
 
-- **Per-user isolation.** Every API route calls `requireUser()` (throws 401
-  if unauthenticated) and scopes every Prisma `findFirst`/`update`/`delete`
-  by `userId`. There is no client-supplied userId parameter anywhere; the
-  session is the only source of identity. A user cannot retrieve, modify,
-  or delete another user's dreams, sessions, entities, mentions, or
-  shares by modifying IDs, URLs, request payloads, or client state.
-- **Secrets never exposed.** The `z-ai-web-dev-sdk` is imported only in
-  server modules (`src/lib/ai.ts`, `src/app/api/asr/route.ts`,
-  `src/app/api/tts/route.ts`). No Gemini credentials appear in client
-  bundles or API responses.
+- **Per-user isolation.** Every API route calls `requireUser()` (throws
+  401 if unauthenticated) and scopes every Repository query by `userId`.
+  There is no client-supplied userId parameter anywhere; the session is
+  the only source of identity. A user cannot retrieve, modify, or
+  delete another user's dreams, sessions, entities, mentions, or shares
+  by modifying IDs, URLs, request payloads, or client state. The
+  Firestore adapter enforces this with composite filters; the Prisma
+  adapter passes through the same scoping the routes already do.
+- **Secrets never exposed.** Server-only SDK credentials live in Secret
+  Manager (production) or `process.env` (local). The `@google/genai`
+  backend reads `GEMINI_API_KEY` via `getSecret()` — never from the
+  client bundle. The Firebase JS SDK uses only the public
+  `firebaseConfig` (apiKey is safe to expose); service-account
+  credentials are server-only via ADC.
 - **Prompt-injection resistance.** Dream text, prior model output,
   session history, and the user's action are all fenced as
   `UNTRUSTED CONTENT` in the prompts. The system prompt explicitly
@@ -153,9 +216,9 @@ src/components/shell/        # TopNav, Footer, CommandPalette, DreamBackground
   regardless of what the model says.
 - **State machine integrity.** AI-proposed deltas are clamped (±25/turn
   per meter, 0–100 range, bounded arrays). Endings are decided by
-  authoritative thresholds (stability ≤ 8 || fear ≥ 98 → collapse;
-  agency ≥ 85 && lucidity ≥ 75 → control; turn ≥ 18 → unresolved). The
-  model can propose; it cannot decide.
+  authoritative thresholds (`stability ≤ 8 || fear ≥ 98 → collapse`;
+  `agency ≥ 85 && lucidity ≥ 75 → control`; `turn ≥ 18 → unresolved`).
+  The model can propose; it cannot decide.
 - **Concurrency + rate limiting.** Per-session single-flight locks
   prevent double-submits / parallel requests from corrupting Arcade
   state (409 "a turn is already forming"). Per-user rate limits cap
@@ -163,9 +226,10 @@ src/components/shell/        # TopNav, Footer, CommandPalette, DreamBackground
   and accidental model-quota burn (429 with Retry-After).
 - **Graceful failure.** Malformed model JSON triggers one repair retry;
   if that fails, a neutral fallback turn is persisted (no turn is
-  burned). Firestore/SQLite failures never falsely claim success. Auth
-  failures deny access cleanly. The user never sees raw stack traces,
-  secrets, or provider errors.
+  burned). Repository errors are wrapped into `{ error: "internal" }`
+  with 500 status — no Prisma/Firestore error text or stack traces
+  leak to the client. Auth failures deny access cleanly. The user
+  never sees raw stack traces, secrets, or provider errors.
 - **Sharing is deliberate.** Public share endpoints return only
   sanitised payloads (title, summary, reflection fields, day-precision
   dates, author first name). Raw model output, internal IDs, email,
@@ -225,38 +289,130 @@ src/components/shell/        # TopNav, Footer, CommandPalette, DreamBackground
 
 ```bash
 bun install
-bun run db:push        # create/migrate the SQLite schema
+# Copy the placeholder env and set NEXTAUTH_SECRET
+cp .env.example .env
+# Generate a 32-byte base64 secret:
+openssl rand -base64 32
+# Paste the value into NEXTAUTH_SECRET in .env
+bun run db:push        # create/migrate the SQLite schema (empty)
 bun run dev            # start the Next.js dev server on port 3000
 bun run lint           # ESLint
 ```
+
+Local dev needs ZERO Google Cloud credentials. The default env values
+(`DATA_BACKEND=sqlite`, `AI_BACKEND=zai`, `AUTH_BACKEND=nextauth`,
+`SECRETS_BACKEND=env`) wire the local + sandbox QA path: Prisma +
+SQLite + z-ai-web-dev-sdk (auto-resolved SDK credentials) + NextAuth
+Credentials + env secrets.
 
 The app runs entirely on `http://localhost:3000`. The only user-visible
 route is `/` (a single-page app with hash-based view switching);
 everything else is an API route under `/api/*`.
 
+After `bun run db:push` the local SQLite DB is **empty** — there is no
+seeded demo account. Sign up via the Auth view to test the full local
+flow.
+
 ### Environment
 
-The sandbox provides the `z-ai-web-dev-sdk` credentials out of the box
-(server-side). No `.env` file is required for local development beyond
-the `DATABASE_URL` that points at `db/custom.db`.
+See `.env.example` for the full placeholder list. For local dev you
+only need the four `*_BACKEND` defaults + `DATABASE_URL` +
+`NEXTAUTH_SECRET` + `NEXTAUTH_URL`. The `GEMINI_API_KEY` /
+`FIREBASE_*` placeholders are only needed when you switch the
+corresponding backend to `gemini` / `firestore` / `firebase` / `gsm`.
+
+---
+
+## Production deployment (Cloud Run)
+
+The Dockerfile + `cloudbuild.yaml` + `deploy/cloud-run.yaml` are
+real, deployable specs. The build pipeline:
+
+1. `Dockerfile` — multi-stage Next.js 16 standalone build (deps →
+   build → runner). Runs as non-root user `dreamweaver`, exposes port
+   8080. The runtime SA provides ADC; no service-account JSON in the
+   image.
+2. `cloudbuild.yaml` — Cloud Build steps:
+   - Build the image with the multi-stage Dockerfile.
+   - Push to Artifact Registry
+     (`${_REGION}-docker.pkg.dev/${_FIREBASE_PROJECT_ID}/${_AR_REPO}/${_SERVICE_NAME}`).
+   - Deploy to Cloud Run with `--service-account` (the runtime SA),
+     `--set-env-vars` (DATA_BACKEND=firestore, AI_BACKEND=gemini,
+     AUTH_BACKEND=firebase, SECRETS_BACKEND=gsm,
+     FIREBASE_PROJECT_ID, GCLOUD_PROJECT, NEXTAUTH_URL), and
+     `--set-secrets` (NEXTAUTH_SECRET, GEMINI_API_KEY from Secret
+     Manager). Min instances 0, concurrency 80, 1 cpu / 1Gi.
+3. `deploy/cloud-run.yaml` — the Cloud Run service manifest as a YAML
+   resource (apply with `gcloud run services replace`). Includes the
+   `cloudrun.secrets` `secretKeyRef` for both secrets, the env vars
+   for the four backend switches, and startup/liveness probes on
+   `/api/me`.
+
+Required IAM roles on the runtime service account
+(`dreamweaver-runner@YOUR_PROJECT.iam.gserviceaccount.com`):
+
+- `roles/datastore.user` — Firestore R/W + queries
+- `roles/firebaseauth.admin` — verify ID tokens (or a more narrowly
+  scoped custom role)
+- `roles/secretmanager.secretAccessor` — NEXTAUTH_SECRET, GEMINI_API_KEY
+- `roles/artifactregistry.reader` — pull the built image
+
+The Firebase JS SDK is initialised in the browser with the public
+`firebaseConfig` (apiKey is safe to expose). The client signs in via
+Firebase, obtains an ID token, POSTs it to `/api/auth/firebase-login`,
+which verifies it via `firebase-admin` and issues a NextAuth JWT
+session keyed on the Firebase uid. From that point the rest of the
+app (`requireUser()`, ownership-scoped queries) is identical to the
+local path.
+
+To deploy:
+
+```bash
+# Prerequisite: enable APIs, create the AR repo, create the SA, grant
+# the IAM roles above, create the secrets in Secret Manager, and
+# populate the substitutions in cloudbuild.yaml.
+
+# Trigger a build:
+gcloud builds submit --config=cloudbuild.yaml \
+  --substitutions=_REGION=us-central1,_SERVICE_NAME=dreamweaver,\
+_AR_REPO=dreamweaver,_RUNNER_SA=dreamweaver-runner@YOUR_PROJECT.iam.gserviceaccount.com,\
+_FIREBASE_PROJECT_ID=YOUR_PROJECT,_NEXTAUTH_SECRET_SM=NEXTAUTH_SECRET,\
+_GEMINI_API_KEY_SM=GEMINI_API_KEY
+```
 
 ---
 
 ## Testing
 
 The project is verified end-to-end via the `agent-browser` headless
-browser automation (navigate, click, type, snapshot). Each development
-round in `worklog.md` records the golden-path verifications performed.
-Unit tests for the model-JSON repair logic live in
+browser automation (navigate, click, type, snapshot). Each
+development round in `worklog.md` records the golden-path verifications
+performed.
+
+Unit-test coverage for the model-JSON repair logic lives in
 `scripts-test/test-extract.ts`.
 
 ---
 
-## Known limitations
+## Known limitations (honest)
 
-- The sandbox cannot deploy to Google Cloud Run; the production target
-  is represented by the Next.js dev server. The architectural mapping
-  is documented above and in `worklog.md`.
+- **The Google-stack production path (Firestore / Firebase Auth /
+  Gemini-direct / Secret Manager / Cloud Run) is real code with the
+  official SDKs and is deployable, but in this sandbox it was
+  runtime-verified only on the local SQLite / z-ai-web-dev-sdk /
+  NextAuth path.** No Google Cloud credentials exist in the sandbox;
+  the production path was not exercised against live Google Cloud.
+  The Firestore adapter, the @google/genai backend, the Secret
+  Manager client, the firebase-login route, the Dockerfile, and the
+  Cloud Build/Run manifests all compile and conform to the official
+  SDK APIs, but final runtime verification requires real credentials
+  at deploy time.
+- The Firestore adapter's `tx()` method uses per-method atomic write
+  batches (Firestore writeBatch) rather than a true cross-write
+  transaction with read-your-writes. For the routes that use it
+  (dream create + analysis + motifs), the per-method atomicity is
+  sufficient; a true cross-write Firestore transaction is a future
+  enhancement.
 - The memory-graph alias map (`ALIAS_MAP` in `src/lib/memory-graph.ts`)
   is hand-curated English. Cross-locale aliasing and embedding-based
   near-match would deepen thread detection further.

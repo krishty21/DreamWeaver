@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import ZAI from "z-ai-web-dev-sdk";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { ttsCacheGet, ttsCacheKey, ttsCacheSet } from "@/lib/tts-cache";
 
 // POST /api/tts — text-to-speech for a dream.
@@ -102,6 +102,7 @@ export async function POST(req: Request) {
   // narratable text (title + summary + raw). Otherwise use the supplied text.
   let text = (body.text ?? "").trim();
   if (body.dreamId) {
+    const db = await getRepository();
     const dream = await db.dream.findFirst({
       where: { id: body.dreamId, userId },
       include: { analysis: true },

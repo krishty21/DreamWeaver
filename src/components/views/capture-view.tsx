@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Sparkles, ArrowLeft, Loader2, Mic, Square, Trash2, AudioLines } from "lucide-react";
+import { ArrowLeft, Loader2, Mic, Square, Trash2, AudioLines } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { VoiceRecorder } from "@/lib/voice-recorder";
@@ -371,7 +371,6 @@ export function CaptureView() {
               disabled={text.trim().length < 12 || voice === "recording"}
               className="h-11 px-6 bg-foreground text-background hover:opacity-90"
             >
-              <Sparkles className="h-4 w-4" strokeWidth={1.6} />
               Record &amp; reflect
             </Button>
           </div>
@@ -401,7 +400,7 @@ export function CaptureView() {
             {PHASES[phase]}
           </motion.p>
           <p className="mt-2 text-sm text-muted-foreground">
-            Gemini is reading your dream.
+            Reading your dream.
           </p>
         </motion.div>
       )}

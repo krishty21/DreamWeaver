@@ -218,9 +218,10 @@
 .dream-orb {
   position: absolute;
   border-radius: 9999px;
-  filter: blur(60px);
+  filter: blur(48px);
   opacity: 0.5;
   animation: drift 24s ease-in-out infinite alternate;
+  will-change: transform, opacity;
 }
 @keyframes drift {
   0% { transform: translate3d(0, 0, 0) scale(1); }
@@ -236,7 +237,7 @@
   pointer-events: none;
   background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.045 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
   mix-blend-mode: multiply;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 /* Hairline rule used throughout the editorial layout */
@@ -306,8 +307,8 @@
 .rise { animation: rise 600ms cubic-bezier(0.22, 1, 0.36, 1) both; }
 
 @keyframes pulseSoft {
-  0%, 100% { opacity: 0.55; }
-  50% { opacity: 0.85; }
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 0.8; }
 }
 .pulse-soft { animation: pulseSoft 3.4s ease-in-out infinite; }
 
@@ -1548,4 +1549,67 @@ svg .spark-line-shadow {
 /* r12 marker rule — Turbopack CSS staleness guard. */
 .dw-r12-css-live::after {
   content: "r12";
+}
+
+/* ===========================================================
+   m2a — Mobile perf
+   Large blurred gradients are the most expensive compositor work on
+   low-end mobile GPUs. Cap the orb blur tighter on small screens and
+   hide the film-grain veil entirely (its SVG turbulence tile repainted
+   across the viewport is a meaningful paint cost on small devices —
+   the visual loss is negligible because the rest of the dream field
+   already carries the atmosphere). Atmosphere preserved; budget cut.
+   =========================================================== */
+@media (max-width: 640px) {
+  .dream-orb {
+    filter: blur(28px);
+  }
+  .grain::after {
+    display: none;
+  }
+}
+
+/* ===========================================================
+   m3 — Reduced motion
+   When the user has expressed a preference for reduced motion,
+   neutralize the ambient decorative animations (drifting orbs,
+   floating fragments, the brand-mark pulse, the film-grain veil,
+   the streak dot, the whisper + streaming text breath). Functional
+   feedback (loading spinners, state meters, recording indicators,
+   the streaming caret, shimmer skeletons, hold-acknowledgment
+   dots) is preserved so the app still communicates state changes —
+   only the ambient atmosphere becomes still.
+   =========================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .dream-orb,
+  .fragment,
+  .drift-orb,
+  .pulse-soft,
+  .streak-pulse-dot,
+  .whisper,
+  .streaming-text,
+  .audio-loading-bar {
+    animation: none !important;
+  }
+  /* Hide the floating dream fragments entirely — they exist only as ambient
+     decoration; under reduced motion they would sit static and read as noise. */
+  .fragment {
+    display: none !important;
+  }
+  /* Disable the film-grain veil's subtle repaint — the layer becomes a flat
+     static surface. */
+  .grain::after {
+    display: none !important;
+  }
+  /* Keep orbs at a static, low opacity so the field still has atmosphere. */
+  .dream-orb {
+    opacity: 0.35 !important;
+  }
+  /* Restrain the one-shot entrance sweeps so content appears at its final
+     position rather than sliding in. Transitions on hover/focus are
+     preserved — those communicate state, not motion. */
+  .rise,
+  .meter-fill {
+    animation: none !important;
+  }
 }

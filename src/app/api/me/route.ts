@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 
 // Returns the current authenticated user's public profile + counts.
 export async function GET() {
@@ -11,6 +11,7 @@ export async function GET() {
     return NextResponse.json({ user: null }, { status: 200 });
   }
 
+  const db = await getRepository();
   const user = await db.user.findUnique({
     where: { id: userId },
     select: { id: true, email: true, name: true, createdAt: true },

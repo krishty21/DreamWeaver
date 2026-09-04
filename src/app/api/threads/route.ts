@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getRepository } from "@/lib/data/repository";
 import { reconcileUserGraph, computeThreads } from "@/lib/memory-graph";
 
 // GET /api/threads — the Dream Memory Graph: canonical entities traced through
@@ -23,6 +23,7 @@ export async function GET() {
   // Lazy backfill: if the user has motifs but no entities, reconcile once so
   // accounts created before r12 get their graph on first visit. Idempotent.
   try {
+    const db = await getRepository();
     const [motifCount, entityCount] = await Promise.all([
       db.motif.count({ where: { userId } }),
       db.entity.count({ where: { userId } }),

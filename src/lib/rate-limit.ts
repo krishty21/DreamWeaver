@@ -61,11 +61,15 @@ export function rateLimit(
 }
 
 /** Per-key single-flight lock. Call release() when the operation completes.
- *  Auto-expires after `ttlMs` as a safety net against crashed calls. */
+ *  Auto-expires after `ttlMs` as a safety net against crashed calls.
+ *
+ *  `stillMine()` lets long-running async work (e.g. a streaming Arcade turn)
+ *  verify its lock hasn't been re-acquired by a retry that came in after the
+ *  TTL expired — preventing a double-commit of authoritative state. */
 export function acquireLock(
   key: string,
   opts: { ttlMs: number }
-): { acquired: boolean; release: () => void; heldForMs: number } {
+): { acquired: boolean; release: () => void; heldForMs: number; stillMine: () => boolean } {
   const now = Date.now();
   maybeSweep(now);
   const existing = locks.get(key);
@@ -74,6 +78,7 @@ export function acquireLock(
       acquired: false,
       release: () => {},
       heldForMs: now - existing.acquiredAt,
+      stillMine: () => false,
     };
   }
   const entry: LockEntry = { acquiredAt: now, expiresAt: now + opts.ttlMs };
@@ -86,6 +91,7 @@ export function acquireLock(
       if (cur === entry) locks.delete(key);
     },
     heldForMs: 0,
+    stillMine: () => locks.get(key) === entry,
   };
 }
 
