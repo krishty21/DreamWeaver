@@ -7,6 +7,7 @@ import type {
   PatternReport,
   MotifFrequency,
   EmotionalTrendPoint,
+  CalendarDay,
   Mood,
 } from "@/lib/types";
 
@@ -110,12 +111,40 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
     .sort((x, y) => y.count - x.count)
     .slice(0, 8);
 
+  // --- calendar (nights remembered, per day) ---
+  // Aggregated app-side from dream timestamps; the dominant mood of the day
+  // colours the cell. Ties resolve to the latest dream that day.
+  const calMap = new Map<string, { count: number; moodTally: Map<Mood, number>; lastMood: Mood }>();
+  for (const d of dreams) {
+    const key = d.createdAt.toISOString().slice(0, 10);
+    const mood = (d.mood as Mood) || "neutral";
+    const entry = calMap.get(key) ?? { count: 0, moodTally: new Map<Mood, number>(), lastMood: mood };
+    entry.count += 1;
+    entry.lastMood = mood;
+    entry.moodTally.set(mood, (entry.moodTally.get(mood) ?? 0) + 1);
+    calMap.set(key, entry);
+  }
+  const dreamCalendar: CalendarDay[] = Array.from(calMap.entries())
+    .map(([date, e]) => {
+      let dominant: Mood = e.lastMood;
+      let best = -1;
+      for (const [m, c] of e.moodTally) {
+        if (c > best) {
+          best = c;
+          dominant = m;
+        }
+      }
+      return { date, count: e.count, mood: dominant };
+    })
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+
   return {
     totalDreams: dreams.length,
     totalSessions: sessions.length,
     topMotifs,
     emotionalTrend,
     moodDistribution,
+    dreamCalendar,
     recurringPairs,
     earliestDream: dreams[0]?.createdAt.toISOString() ?? null,
     latestDream: dreams[dreams.length - 1]?.createdAt.toISOString() ?? null,

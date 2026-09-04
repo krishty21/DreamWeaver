@@ -28,43 +28,149 @@ function clamp(n: unknown, lo = 0, hi = 1): number {
   return Math.max(lo, Math.min(hi, v));
 }
 
+// Normalize common model quirks before parsing: smart quotes, // and /* */
+// comments, BOM, zero-width chars.
+function normalizeJSONSource(t: string): string {
+  return t
+    .replace(/\uFEFF/g, "")
+    .replace(/[\u200B-\u200D\u2060]/g, "")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u2013\u2014]/g, "-")
+    // line comments (only outside strings — the crude strip below is safe
+    // enough for model output where // almost always starts a comment)
+    .replace(/^\s*\/\/.*$/gm, "")
+    .replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+// Attempt JSON.parse with progressively more aggressive repairs.
+function parseWithRepairs(s: string): any | null {
+  // 1. direct parse
+  try {
+    return JSON.parse(s);
+  } catch {}
+
+  // 2. trailing commas
+  try {
+    return JSON.parse(s.replace(/,\s*([}\]])/g, "$1"));
+  } catch {}
+
+  // 3. truncated output — cut back to the last value that parsed cleanly,
+  //    then close any open brackets/braces.
+  try {
+    const repaired = repairTruncated(s.replace(/,\s*([}\]])/g, "$1"));
+    if (repaired) return JSON.parse(repaired);
+  } catch {}
+
+  return null;
+}
+
+// Repair a truncated JSON document: terminate a dangling string, strip the
+// tail after the last complete value if possible, then close open structures.
+function repairTruncated(s: string): string | null {
+  // Walk the string tracking string-state and open brackets.
+  let inString = false;
+  let escape = false;
+  const stack: string[] = [];
+  let lastSafe = -1; // index of the last "clean value boundary" outside strings
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\" && inString) {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{" || ch === "[") stack.push(ch);
+    else if (ch === "}" || ch === "]") stack.pop();
+    else if (ch === "," && stack.length > 0) lastSafe = i;
+  }
+  if (stack.length === 0) return null; // nothing to close — not truncation-shaped
+
+  // Cut at the last comma that sat inside an open structure (drops the
+  // incomplete trailing value), unless that would discard the only content.
+  let out: string;
+  if (lastSafe > 0) {
+    out = s.slice(0, lastSafe).replace(/[,\s]+$/, "");
+  } else {
+    // No safe comma boundary — keep everything; if we're mid-string,
+    // terminate the string so the document can still be closed.
+    out = s.replace(/[,\s]+$/, "");
+    if (inString) out += '"';
+  }
+
+  // Recompute the open-structure stack on the trimmed source.
+  let inStr2 = false;
+  let esc2 = false;
+  const stack2: string[] = [];
+  for (let i = 0; i < out.length; i++) {
+    const ch = out[i];
+    if (esc2) {
+      esc2 = false;
+      continue;
+    }
+    if (ch === "\\" && inStr2) {
+      esc2 = true;
+      continue;
+    }
+    if (ch === '"') {
+      inStr2 = !inStr2;
+      continue;
+    }
+    if (inStr2) continue;
+    if (ch === "{" || ch === "[") stack2.push(ch);
+    else if (ch === "}" || ch === "]") stack2.pop();
+  }
+  if (inStr2) return null; // still malformed (e.g. stray quote) — give up
+  while (stack2.length > 0) {
+    const open = stack2.pop();
+    out += open === "{" ? "}" : "]";
+  }
+  return out;
+}
+
 // Try to extract a JSON object from a model response that may contain
-// surrounding prose / code fences.
+// surrounding prose / code fences / truncation.
 function extractJSON(text: string): any | null {
   if (!text) return null;
   // strip code fences
   let t = text.trim();
   const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
   if (fence) t = fence[1].trim();
-  // find first { ... last }
-  const first = t.indexOf("{");
+  t = normalizeJSONSource(t);
+
+  const firstBrace = t.indexOf("{");
+  const firstBracket = t.indexOf("[");
+  // A top-level array starts before any object — try the array first.
+  const arrayFirst =
+    firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace);
+  if (arrayFirst) {
+    const lastBracket = t.lastIndexOf("]");
+    const candidate =
+      lastBracket > firstBracket
+        ? t.slice(firstBracket, lastBracket + 1) // possibly complete array
+        : t.slice(firstBracket); // truncated array (final ] dropped)
+    const parsedArr = parseWithRepairs(candidate);
+    if (parsedArr !== null) return parsedArr;
+  }
+
+  // Object extraction: first { ... last }, with truncation fallbacks.
+  const first = firstBrace;
   const last = t.lastIndexOf("}");
-  if (first === -1 || last === -1 || last <= first) {
-    // maybe it's a JSON array
-    const af = t.indexOf("[");
-    const al = t.lastIndexOf("]");
-    if (af !== -1 && al !== -1 && al > af) {
-      try {
-        return JSON.parse(t.slice(af, al + 1));
-      } catch {
-        return null;
-      }
-    }
-    return null;
+  if (first === -1) return null;
+  if (last > first) {
+    const parsed = parseWithRepairs(t.slice(first, last + 1));
+    if (parsed !== null) return parsed;
   }
-  try {
-    return JSON.parse(t.slice(first, last + 1));
-  } catch {
-    // try to fix trailing commas
-    try {
-      const fixed = t
-        .slice(first, last + 1)
-        .replace(/,\s*([}\]])/g, "$1");
-      return JSON.parse(fixed);
-    } catch {
-      return null;
-    }
-  }
+  // Last resort: everything after the first { is a truncated object.
+  return parseWithRepairs(t.slice(first));
 }
 
 // ---------- Dream Analysis ----------
@@ -126,6 +232,13 @@ const analysisSchema = z.object({
     .default("neutral"),
 });
 
+function brief(raw: string): string {
+  const s = JSON.stringify(raw);
+  if (s.length <= 700) return s;
+  // head + tail: truncation diagnosis needs the end of the response
+  return `${s.slice(0, 400)} …[len ${s.length}]… ${s.slice(-260)}`;
+}
+
 export async function analyzeDream(
   rawText: string,
   history: { dreamId: string; date: string; motifs: string[]; summary: string }[]
@@ -139,10 +252,35 @@ export async function analyzeDream(
     ],
     thinking: { type: "disabled" },
   });
-  const raw = completion.choices?.[0]?.message?.content ?? "";
+  let raw = completion.choices?.[0]?.message?.content ?? "";
 
-  const parsed = extractJSON(raw);
+  let parsed = extractJSON(raw);
   if (!parsed) {
+    // One repair attempt: show the model its own invalid output and ask for
+    // strict JSON only. Much cheaper for the user than losing the analysis.
+    console.warn("[ai] analysis response was not parseable JSON — retrying once. head:", brief(raw));
+    try {
+      const retry = await client.chat.completions.create({
+        messages: [
+          { role: "assistant", content: prompt.system },
+          { role: "user", content: prompt.user },
+          { role: "assistant", content: raw.slice(0, 6000) },
+          {
+            role: "user",
+            content:
+              "Your previous response was not valid JSON (it may have contained prose, markdown, or was truncated). Return ONLY the JSON object — no prose, no code fences, no commentary. If some fields must be empty, use empty arrays or zero.",
+          },
+        ],
+        thinking: { type: "disabled" },
+      });
+      raw = retry.choices?.[0]?.message?.content ?? "";
+      parsed = extractJSON(raw);
+    } catch (e) {
+      console.warn("[ai] analysis repair attempt failed:", e);
+    }
+  }
+  if (!parsed) {
+    console.warn("[ai] analysis fallback engaged. head:", brief(raw));
     // graceful fallback — never let a malformed model response crash the app
     const fallback: DreamAnalysisData = {
       title: "A dream, partially recalled",
@@ -277,10 +415,35 @@ export async function generateArcadeTurn(opts: {
     ],
     thinking: { type: "disabled" },
   });
-  const raw = completion.choices?.[0]?.message?.content ?? "";
+  let raw = completion.choices?.[0]?.message?.content ?? "";
 
-  const parsed = extractJSON(raw);
+  let parsed = extractJSON(raw);
   if (!parsed) {
+    // One repair attempt: show the model its invalid output, ask for strict JSON.
+    // Without this a single malformed response burns a turn of the simulation.
+    console.warn("[ai] arcade turn response was not parseable JSON — retrying once. head:", brief(raw));
+    try {
+      const retry = await client.chat.completions.create({
+        messages: [
+          { role: "assistant", content: prompt.system },
+          { role: "user", content: prompt.user },
+          { role: "assistant", content: raw.slice(0, 6000) },
+          {
+            role: "user",
+            content:
+              "Your previous response was not valid JSON. Return ONLY the JSON object matching the schema — no prose, no code fences. Keep sceneText vivid but finish the object.",
+          },
+        ],
+        thinking: { type: "disabled" },
+      });
+      raw = retry.choices?.[0]?.message?.content ?? "";
+      parsed = extractJSON(raw);
+    } catch (e) {
+      console.warn("[ai] arcade turn repair attempt failed:", e);
+    }
+  }
+  if (!parsed) {
+    console.warn("[ai] arcade turn fallback engaged. head:", brief(raw));
     // graceful fallback: a minimal, neutral turn so the session never hard-crashes
     const fallback: ArcadeTurnResponse = {
       sceneText:

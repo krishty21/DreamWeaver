@@ -5,6 +5,7 @@ import { useApp } from "@/lib/store";
 import { Map, Loader2, Sparkles, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { motion } from "framer-motion";
 import type { PatternReport } from "@/lib/types";
+import { DreamCalendar } from "@/components/views/dream-calendar";
 
 async function fetchPatterns() {
   const res = await fetch("/api/patterns");
@@ -63,7 +64,18 @@ export function PatternsView() {
         </p>
       </motion.div>
 
-      <div className="mt-12 grid grid-cols-1 lg:grid-cols-3 gap-5">
+      {/* Nights-remembered calendar — full width */}
+      <motion.section
+        initial={{ opacity: 0, y: 10 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1 }}
+        className="mt-10 surface p-6"
+        aria-label="Dream calendar"
+      >
+        <DreamCalendar days={report.dreamCalendar ?? []} />
+      </motion.section>
+
+      <div className="mt-8 grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Top motifs — big */}
         <section className="surface p-6 lg:col-span-2">
           <div className="flex items-center justify-between mb-5">

@@ -16,6 +16,7 @@ import { PatternsView } from "@/components/views/patterns-view";
 import { ArcadeView } from "@/components/views/arcade-view";
 import { ArcadeSessionView } from "@/components/views/arcade-session-view";
 import { ProfileView } from "@/components/views/profile-view";
+import { SharedDreamView } from "@/components/views/shared-dream-view";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
 
@@ -75,14 +76,17 @@ export default function Home() {
 
   const loading = status === "loading" || !mounted;
 
-  // Full-bleed views (landing + auth) render their own background + footer.
-  const fullBleed = view === "landing" || view === "auth" || !authed;
+  // Full-bleed views (landing + auth + public shared reflection) render their
+  // own background + chrome. The shared view is public: it renders signed out.
+  const fullBleed = view === "shared" || view === "landing" || view === "auth" || !authed;
 
   return (
     <div className="relative min-h-screen flex flex-col">
       <DreamBackground mood={moodFor(view)} />
 
-      {authed && <TopNav />}
+      {/* The shared reflection is a standalone public page — it renders its
+          own brand bar and footer, never the private app chrome. */}
+      {authed && view !== "shared" && <TopNav />}
 
       <main className="relative z-10 flex-1 flex flex-col">
         {loading ? (
@@ -97,9 +101,9 @@ export default function Home() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.3 }}
-              className="relative z-10"
+              className="relative z-10 flex-1 flex flex-col"
             >
-              {view === "auth" ? <AuthView /> : <LandingView />}
+              {view === "auth" ? <AuthView /> : view === "shared" ? <SharedDreamView /> : <LandingView />}
             </motion.div>
           </AnimatePresence>
         ) : (
@@ -120,7 +124,7 @@ export default function Home() {
         )}
       </main>
 
-      {authed && <Footer />}
+      {authed && view !== "shared" && <Footer />}
     </div>
   );
 }
@@ -152,7 +156,7 @@ function moodFor(view: View): string {
   // The arcade + dream views tend toward the surreal/lucid palette.
   if (view === "session" || view === "arcade") return "surreal";
   if (view === "capture") return "lucid";
-  if (view === "dream") return "melancholic";
+  if (view === "dream" || view === "shared") return "melancholic";
   if (view === "patterns") return "neutral";
   return "neutral";
 }

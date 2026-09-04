@@ -3,9 +3,11 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Loader2, Sparkles, Compass, Inbox } from "lucide-react";
+import { ArrowLeft, Loader2, Sparkles, Compass, Inbox, FileDown } from "lucide-react";
 import { motion } from "framer-motion";
 import { useMemo } from "react";
+import { buildJournalMarkdown, downloadMarkdown } from "@/lib/journal-export";
+import { useToast } from "@/hooks/use-toast";
 
 async function fetchDreams() {
   const res = await fetch("/api/dreams");
@@ -15,9 +17,25 @@ async function fetchDreams() {
 
 export function JournalView() {
   const navigate = useApp((s) => s.navigate);
+  const { toast } = useToast();
   const { data, isLoading } = useQuery({ queryKey: ["dreams"], queryFn: fetchDreams });
 
   const dreams: any[] = data?.dreams ?? [];
+
+  function onExport() {
+    if (dreams.length === 0) return;
+    try {
+      const md = buildJournalMarkdown(dreams);
+      const stamp = new Date().toISOString().slice(0, 10);
+      downloadMarkdown(md, `dream-journal-${stamp}.md`);
+      toast({
+        title: "Journal exported",
+        description: `${dreams.length} dream${dreams.length === 1 ? "" : "s"} written to Markdown.`,
+      });
+    } catch {
+      toast({ title: "Export failed", description: "Please try again.", variant: "destructive" });
+    }
+  }
 
   // group by month for an editorial reading rhythm
   const groups = useMemo(() => {
@@ -42,13 +60,26 @@ export function JournalView() {
             Your recorded dreams
           </h1>
         </div>
-        <Button
-          onClick={() => navigate("capture")}
-          className="h-11 bg-foreground text-background hover:opacity-90"
-        >
-          <Sparkles className="h-4 w-4" strokeWidth={1.6} />
-          Capture a dream
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onExport}
+            disabled={dreams.length === 0}
+            className="h-9 border-foreground/25 bg-card hover:bg-accent hover:border-foreground/40 shadow-sm"
+            aria-label="Export the whole journal as a Markdown file"
+          >
+            <FileDown className="h-4 w-4" strokeWidth={1.6} />
+            <span className="sr-only sm:not-sr-only sm:ml-1.5">Export .md</span>
+          </Button>
+          <Button
+            onClick={() => navigate("capture")}
+            className="h-11 bg-foreground text-background hover:opacity-90"
+          >
+            <Sparkles className="h-4 w-4" strokeWidth={1.6} />
+            Capture a dream
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -93,6 +124,16 @@ function DreamCard({
   const a = dream.analysis;
   const motifs: string[] = a ? safeParse(a.motifsJson).slice(0, 4).map((m: any) => m.label) : [];
   const mood = dream.mood || "neutral";
+  const moodColor =
+    mood === "tense"
+      ? "#413f3d"
+      : mood === "melancholic"
+      ? "#697184"
+      : mood === "surreal"
+      ? "#b1a6a4"
+      : mood === "lucid"
+      ? "#d8cfd0"
+      : "#8a8580";
 
   return (
     <motion.article
@@ -103,7 +144,8 @@ function DreamCard({
       onClick={onOpen}
     >
       <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-        <span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="mood-dot" style={{ background: moodColor }} aria-hidden="true" />
           {new Date(dream.createdAt).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" })}
         </span>
         {mood !== "neutral" && <span className="chip">{mood}</span>}

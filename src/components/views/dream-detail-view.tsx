@@ -17,11 +17,19 @@ import {
   MapPin,
   Footprints,
   Link2,
+  Share2,
+  Copy,
+  Check,
+  Link2Off,
+  MoonStar,
+  FileDown,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Switch } from "@/components/ui/switch";
+import { buildDreamMarkdown, downloadMarkdown, slugify } from "@/lib/journal-export";
 import type {
   DreamAnalysisData,
   Emotion,
@@ -43,6 +51,7 @@ export function DreamDetailView() {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [reflecting, setReflecting] = useState(false);
+  const [shareBusy, setShareBusy] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["dream", dreamId],
@@ -60,6 +69,60 @@ export function DreamDetailView() {
 
   const dream = data.dream;
   const a = dream.analysis ? (parseAnalysis(dream.analysis) as DreamAnalysisData) : null;
+
+  // ---------- share management ----------
+  // The share is a read-only public link to this dream's SANITISED reflection.
+  // rawText is only exposed if the dreamer explicitly opts in.
+  const shareToken: string | null = dream.shareToken ?? null;
+  const shareUrl =
+    shareToken && typeof window !== "undefined"
+      ? `${window.location.origin}/#/shared/${shareToken}`
+      : "";
+
+  async function onShare(includeRaw?: boolean) {
+    if (!dream || shareBusy) return;
+    setShareBusy(true);
+    try {
+      const res = await fetch(`/api/dreams/${dream.id}/share`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(
+          includeRaw === undefined ? {} : { includeRaw }
+        ),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "The share link could not be created.");
+      await qc.invalidateQueries({ queryKey: ["dream", dream.id] });
+      if (includeRaw === undefined) {
+        toast({
+          title: "Reflection shared",
+          description: "A read-only link has been created. Your raw memory stays private.",
+        });
+      }
+    } catch (e: any) {
+      toast({ title: "Sharing failed", description: e.message, variant: "destructive" });
+    } finally {
+      setShareBusy(false);
+    }
+  }
+
+  async function onRevokeShare() {
+    if (!dream || shareBusy) return;
+    setShareBusy(true);
+    try {
+      const res = await fetch(`/api/dreams/${dream.id}/share`, { method: "DELETE" });
+      if (!res.ok) throw new Error("The link could not be revoked.");
+      await qc.invalidateQueries({ queryKey: ["dream", dream.id] });
+      toast({
+        title: "Link revoked",
+        description: "The shared reflection is no longer reachable.",
+      });
+    } catch (e: any) {
+      toast({ title: "Revoke failed", description: e.message, variant: "destructive" });
+    } finally {
+      setShareBusy(false);
+    }
+  }
 
   // Re-run the Gemini reflection. The raw dream is never modified — only the
   // derived analysis is replaced.
@@ -137,6 +200,38 @@ export function DreamDetailView() {
               {reflecting ? "Reading…" : a ? "Re-reflect" : "Add reflection"}
             </span>
           </Button>
+          {a && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => onShare()}
+              disabled={shareBusy || reflecting}
+              className="h-9"
+              aria-label="Share this reflection"
+            >
+              {shareBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Share2 className="h-4 w-4" strokeWidth={1.6} />
+              )}
+              <span className="sr-only sm:not-sr-only sm:ml-1.5">
+                {shareToken ? "Shared…" : "Share"}
+              </span>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              const md = buildDreamMarkdown(dream);
+              downloadMarkdown(md, `${slugify(dream.title || "dream")}.md`);
+              toast({ title: "Dream exported", description: "Saved as a Markdown file." });
+            }}
+            className="h-9"
+            aria-label="Export this dream as a Markdown file"
+          >
+            <FileDown className="h-4 w-4" strokeWidth={1.6} />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -148,6 +243,19 @@ export function DreamDetailView() {
           </Button>
         </div>
       </div>
+
+      {/* Share panel — visible while the reflection is shared */}
+      {shareToken && (
+        <SharePanel
+          url={shareUrl}
+          includeRaw={!!dream.shareIncludeRaw}
+          sharedAt={dream.sharedAt}
+          busy={shareBusy}
+          onToggleRaw={(v) => onShare(v)}
+          onRevoke={onRevokeShare}
+          onPreview={() => navigate("shared", { shareToken })}
+        />
+      )}
 
       <motion.div
         initial={{ opacity: 0, y: 12 }}
@@ -304,6 +412,107 @@ export function DreamDetailView() {
 }
 
 // ---------- sub-components ----------
+
+function SharePanel({
+  url,
+  includeRaw,
+  sharedAt,
+  busy,
+  onToggleRaw,
+  onRevoke,
+  onPreview,
+}: {
+  url: string;
+  includeRaw: boolean;
+  sharedAt: string | null;
+  busy: boolean;
+  onToggleRaw: (v: boolean) => void;
+  onRevoke: () => void;
+  onPreview: () => void;
+}) {
+  const { toast } = useToast();
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      toast({
+        title: "Copy failed",
+        description: "Select the link text and copy it manually.",
+        variant: "destructive",
+      });
+    }
+  }
+
+  const shared = sharedAt ? new Date(sharedAt).toLocaleDateString() : null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: -6 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.35 }}
+      className="surface p-5 sm:p-6 mb-2"
+      role="region"
+      aria-label="Public share link for this reflection"
+    >
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 text-xs tracking-caps uppercase text-muted-foreground">
+            <MoonStar className="h-3.5 w-3.5" strokeWidth={1.6} />
+            Public read-only link
+            {shared && <span className="normal-case tracking-normal">· since {shared}</span>}
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <code className="share-url text-xs sm:text-sm px-3 py-2 bg-background/70 border border-border rounded-md truncate flex-1 min-w-0" title={url}>
+              {url || "…"}
+            </code>
+            <Button size="sm" variant="outline" className="h-9 shrink-0" onClick={copy} aria-label="Copy share link">
+              {copied ? <Check className="h-4 w-4 text-green-700" strokeWidth={1.8} /> : <Copy className="h-4 w-4" strokeWidth={1.6} />}
+              <span className="sr-only sm:not-sr-only sm:ml-1.5">{copied ? "Copied" : "Copy"}</span>
+            </Button>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button size="sm" variant="outline" className="h-9" onClick={onPreview}>
+            <Eye className="h-4 w-4" strokeWidth={1.6} />
+            <span className="sr-only sm:not-sr-only sm:ml-1.5">Preview</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-9 text-muted-foreground hover:text-destructive"
+            onClick={onRevoke}
+            disabled={busy}
+          >
+            <Link2Off className="h-4 w-4" strokeWidth={1.6} />
+            <span className="sr-only sm:not-sr-only sm:ml-1.5">Revoke</span>
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 pt-4 border-t border-border/60 flex items-start sm:items-center justify-between gap-3 flex-col sm:flex-row">
+        <div>
+          <label htmlFor="include-raw" className="text-sm text-foreground flex items-center gap-2">
+            Include my dream words in the public page
+          </label>
+          <p className="text-[11px] text-muted-foreground mt-0.5 pretty">
+            Off by default — the shared page shows the reflection only, never your raw memory.
+          </p>
+        </div>
+        <Switch
+          id="include-raw"
+          checked={includeRaw}
+          disabled={busy}
+          onCheckedChange={onToggleRaw}
+          aria-label="Include the raw dream text in the shared page"
+        />
+      </div>
+    </motion.div>
+  );
+}
 
 function SectionLabel({ icon: Icon, tag, label }: { icon: any; tag: string; label: string }) {
   return (

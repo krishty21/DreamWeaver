@@ -5,7 +5,8 @@ import { useEffect } from "react";
 import { useApp } from "@/lib/store";
 
 // Hook that maps the current auth status onto the active view.
-// - When unauthenticated, force view to "landing" or "auth".
+// - When unauthenticated, force view to "landing", "auth", or "shared"
+//   (the shared reflection is a public read-only view).
 // - When authenticated, redirect away from "landing"/"auth" to "dashboard".
 export function useAuthRouting() {
   const { status } = useSession();
@@ -15,7 +16,7 @@ export function useAuthRouting() {
   useEffect(() => {
     if (status === "loading") return;
     if (status === "unauthenticated") {
-      if (view !== "landing" && view !== "auth") {
+      if (view !== "landing" && view !== "auth" && view !== "shared") {
         navigate("landing");
       }
     } else if (status === "authenticated") {

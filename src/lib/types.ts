@@ -126,12 +126,21 @@ export type EmotionalTrendPoint = {
   uncertainty: number;
 };
 
+// One calendar day with dreams recorded. `mood` is the dominant mood of the
+// day's dreams (ties → the most recent dream's mood).
+export type CalendarDay = {
+  date: string; // YYYY-MM-DD
+  count: number;
+  mood: Mood;
+};
+
 export type PatternReport = {
   totalDreams: number;
   totalSessions: number;
   topMotifs: MotifFrequency[];
   emotionalTrend: EmotionalTrendPoint[];
   moodDistribution: { mood: Mood; count: number }[];
+  dreamCalendar: CalendarDay[];
   recurringPairs: { a: string; b: string; count: number }[];
   earliestDream: string | null;
   latestDream: string | null;

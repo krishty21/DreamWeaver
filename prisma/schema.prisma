@@ -36,6 +36,12 @@ model Dream {
   title     String? // short evocative title (AI-proposed, user can ignore)
   // Soft mood used by the visual atmosphere. Derived from analysis.
   mood      String? @default("neutral") // neutral | tense | lucid | melancholic | surreal
+  // Read-only public share of this dream's reflection. Null = not shared.
+  // The token is a secret; anyone holding it can read the SANITISED payload
+  // (never the raw model output, never other dreams).
+  shareToken       String?
+  shareIncludeRaw  Boolean  @default(false) // opt-in: include the dreamer's own words
+  sharedAt         DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -44,6 +50,7 @@ model Dream {
   sessions  ArcadeSession[]
 
   @@index([userId, createdAt])
+  @@unique([shareToken])
 }
 
 // Structured dream memory produced by Gemini and validated by the app.

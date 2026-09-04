@@ -12,40 +12,46 @@ export type View =
   | "patterns"
   | "arcade"
   | "session"
-  | "profile";
+  | "profile"
+  | "shared";
 
 type AppState = {
   view: View;
   activeDreamId: string | null;
   activeSessionId: string | null;
+  activeShareToken: string | null;
   authMode: "signin" | "signup";
   arcadeMode: "replay" | "rewrite" | "confront";
   mounted: boolean;
-  navigate: (view: View, opts?: { dreamId?: string; sessionId?: string; authMode?: "signin" | "signup"; arcadeMode?: "replay" | "rewrite" | "confront" }) => void;
+  navigate: (view: View, opts?: { dreamId?: string; sessionId?: string; shareToken?: string; authMode?: "signin" | "signup"; arcadeMode?: "replay" | "rewrite" | "confront" }) => void;
   syncFromHash: () => void;
 };
 
-function parseHash(): { view: View; activeDreamId: string | null; activeSessionId: string | null } {
+function parseHash(): { view: View; activeDreamId: string | null; activeSessionId: string | null; activeShareToken: string | null } {
   const h = (typeof window !== "undefined" ? window.location.hash : "").replace(/^#\/?/, "");
   const [head, ...rest] = h.split("/");
   const view = (head as View) || "landing";
-  const valid: View[] = ["landing", "auth", "dashboard", "capture", "journal", "dream", "patterns", "arcade", "session", "profile"];
-  if (!valid.includes(view) || !view) return { view: "landing", activeDreamId: null, activeSessionId: null };
+  const valid: View[] = ["landing", "auth", "dashboard", "capture", "journal", "dream", "patterns", "arcade", "session", "profile", "shared"];
+  if (!valid.includes(view) || !view) return { view: "landing", activeDreamId: null, activeSessionId: null, activeShareToken: null };
   let dreamId: string | null = null;
   let sessionId: string | null = null;
+  let shareToken: string | null = null;
   // #/dream/<id> — dream detail
   // #/session/<id> — arcade session
   // #/arcade/<id> — arcade with a pre-selected dream (re-enter panel)
+  // #/shared/<token> — public read-only shared reflection
   if (view === "dream" && rest[0]) dreamId = rest[0];
   if (view === "session" && rest[0]) sessionId = rest[0];
   if (view === "arcade" && rest[0] && rest[0] !== "") dreamId = rest[0];
-  return { view, activeDreamId: dreamId, activeSessionId: sessionId };
+  if (view === "shared" && rest[0]) shareToken = rest[0];
+  return { view, activeDreamId: dreamId, activeSessionId: sessionId, activeShareToken: shareToken };
 }
 
-function toHash(view: View, dreamId?: string | null, sessionId?: string | null) {
+function toHash(view: View, dreamId?: string | null, sessionId?: string | null, shareToken?: string | null) {
   if (view === "dream" && dreamId) return `#/dream/${dreamId}`;
   if (view === "session" && sessionId) return `#/session/${sessionId}`;
   if (view === "arcade" && dreamId) return `#/arcade/${dreamId}`;
+  if (view === "shared" && shareToken) return `#/shared/${shareToken}`;
   return `#/${view === "landing" ? "" : view}`;
 }
 
@@ -54,6 +60,7 @@ export const useApp = create<AppState>((set, get) => ({
   view: "landing",
   activeDreamId: null,
   activeSessionId: null,
+  activeShareToken: null,
   authMode: "signin",
   arcadeMode: "replay",
   mounted: false,
@@ -64,14 +71,16 @@ export const useApp = create<AppState>((set, get) => ({
       view: parsed.view,
       activeDreamId: parsed.activeDreamId,
       activeSessionId: parsed.activeSessionId,
+      activeShareToken: parsed.activeShareToken,
       mounted: true,
     });
   },
   navigate: (view, opts) => {
     const dreamId = opts?.dreamId ?? null;
     const sessionId = opts?.sessionId ?? null;
+    const shareToken = opts?.shareToken ?? null;
     if (typeof window !== "undefined") {
-      const hash = toHash(view, dreamId, sessionId);
+      const hash = toHash(view, dreamId, sessionId, shareToken);
       if (window.location.hash !== hash) {
         window.location.hash = hash;
       }
@@ -80,6 +89,7 @@ export const useApp = create<AppState>((set, get) => ({
       view,
       activeDreamId: dreamId,
       activeSessionId: sessionId,
+      activeShareToken: shareToken,
       authMode: opts?.authMode ?? s.authMode,
       arcadeMode: opts?.arcadeMode ?? s.arcadeMode,
     }));
@@ -94,6 +104,7 @@ if (typeof window !== "undefined") {
       view: parsed.view,
       activeDreamId: parsed.activeDreamId,
       activeSessionId: parsed.activeSessionId,
+      activeShareToken: parsed.activeShareToken,
     });
   });
 }
