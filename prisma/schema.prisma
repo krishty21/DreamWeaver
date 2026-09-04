@@ -79,6 +79,16 @@ model DreamAnalysis {
   interpretationsJson String // JSON: [{ text, confidence }] — clearly labelled "possible"
   relationshipsJson   String // JSON: [{ from, to, relation }] within this dream
   historicalConnectionsJson String // JSON: [{ motifId?, motif, dreamIds: [], note }]
+  // r12 — DREAM LAWS: a small number of recurring internal rules the model
+  // believes govern this dream (e.g. "every clock shows the same time",
+  // "doors lead unexpectedly somewhere"). Used by the Arcade for internal
+  // consistency. Stored as proposed-by-model JSON but the Arcade treats them
+  // as advisory context, never as authoritative state.
+  dreamLawsJson String  @default("[]") // JSON: [{ law, evidence }]
+  // r12 — EVIDENCE: short quotes from the raw dream text that grounded each
+  // interpretation. Powers the "evidence-based reflection" trust layer so the
+  // dreamer can see WHY an interpretation was offered, not just that it was.
+  evidenceJson  String  @default("[]") // JSON: [{ interpretation, evidence }]
   // Raw model response kept for audit / "what did Gemini actually say" transparency.
   modelRawJson  String
 
@@ -99,8 +109,79 @@ model Motif {
   type      String   @default("symbol") // symbol | person | place | action | emotion
   note      String?
   confidence Float   @default(0.5) // AI-reported, advisory
+  // r12 — optional link to a canonical Entity (the dream-memory graph node).
+  // Null until the memory-graph reconciler clusters this mention. Once set,
+  // the mention contributes to that Entity's longitudinal thread + evolution.
+  entityId  String?
 
   @@index([userId, label])
+  @@index([dreamId])
+  @@index([entityId])
+}
+
+// r12 — DREAM MEMORY GRAPH. A canonical entity is the conceptual node that
+// unifies different textual mentions of the same dream element ("faceless
+// figure" ≈ "faceless person" ≈ "faceless man"). Each dream's Motif rows are
+// reconciled (app-side, never by the model) into EntityMention rows on the
+// canonical Entity. This is what lets the product say "this has appeared in
+// several dreams" and "its role has changed over time" without relying on
+// exact string matching.
+//
+// SECURITY: every Entity is scoped to a userId. The reconciler never crosses
+// users. A user cannot retrieve another user's entities by any input.
+model Entity {
+  id         String   @id @default(cuid())
+  userId     String
+  // Canonical label (the most frequent surface form, or the user's chosen one).
+  label      String
+  type       String   @default("symbol") // symbol | person | place | action | emotion
+  // Other surface forms that have been observed and clustered into this entity.
+  // JSON array of strings; the reconciler appends new aliases it normalises.
+  aliasesJson String  @default("[]")
+  // Optional human-friendly note the user can edit later (not the model's note).
+  note       String?
+  // Longitudinal bookkeeping (denormalised for cheap reads; reconciler updates).
+  mentionCount Int    @default(0)
+  firstSeen  DateTime?
+  lastSeen   DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  mentions   EntityMention[]
+
+  @@index([userId, label])
+  @@unique([userId, label, type])
+}
+
+// r12 — one mention of a canonical Entity inside one dream. Carries the
+// per-mention note + confidence + the dream's mood/fear so the evolution view
+// can describe how the entity's ROLE changed across dreams (e.g. "Dream 1:
+// user runs from it · Dream 2: it watches · Dream 3: user approaches it").
+// `role` is the short editorial label for how the entity appeared this time
+// (derived app-side from the mention note + dream context, never from the model).
+model EntityMention {
+  id         String   @id @default(cuid())
+  entityId   String
+  entity     Entity   @relation(fields: [entityId], references: [id], onDelete: Cascade)
+  dreamId    String
+  // Stored redundantly + indexed so the reconciler can query a user's mentions
+  // without a join, and so deletion cascades cleanly when a dream is deleted.
+  userId     String
+  motifId    String? // the source Motif row this mention was reconciled from
+  // The surface form actually used in this dream (before normalisation).
+  surfaceLabel String
+  note       String?
+  // Per-mention snapshot of the dream's emotional telemetry at the time of
+  // recording — powers the evolution chart (fear when this entity appeared).
+  fear       Float    @default(0)
+  lucidity   Float    @default(0)
+  mood       String   @default("neutral")
+  // Reconciler-assigned role label (see memory-graph.ts).
+  role       String   @default("appears")
+  createdAt  DateTime @default(now())
+
+  @@index([entityId, createdAt])
+  @@index([userId, createdAt])
   @@index([dreamId])
 }
 

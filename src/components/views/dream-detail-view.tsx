@@ -28,6 +28,7 @@ import {
   Play,
   Pause,
   Printer,
+  Scroll,
   X,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -45,6 +46,7 @@ import type {
   HistoricalConnection,
 } from "@/lib/types";
 import { Repeat } from "lucide-react";
+import { DreamDNA } from "@/components/views/dream-dna";
 
 async function fetchDream(id: string) {
   const res = await fetch(`/api/dreams/${id}`);
@@ -337,15 +339,34 @@ export function DreamDetailView() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <div className="text-xs tracking-caps uppercase text-muted-foreground mb-3 flex items-center gap-2">
-          <span>{new Date(dream.createdAt).toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
-          {dream.mood && dream.mood !== "neutral" && (
-            <span className="chip">{dream.mood}</span>
+        <div className="flex items-start gap-4">
+          <div className="flex-1 min-w-0">
+            <div className="text-xs tracking-caps uppercase text-muted-foreground mb-3 flex items-center gap-2">
+              <span>{new Date(dream.createdAt).toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" })}</span>
+              {dream.mood && dream.mood !== "neutral" && (
+                <span className="chip">{dream.mood}</span>
+              )}
+            </div>
+            <h1 className="font-display tracking-display text-4xl sm:text-5xl leading-tight balance">
+              {dream.title || "A dream, partially recalled"}
+            </h1>
+          </div>
+          {/* r12 — Dream DNA: compact visual signature. Shown only when the
+              analysis exists (so the telemetry has meaning). Decorative + aria-hidden. */}
+          {a && (
+            <DreamDNA
+              dream={{
+                mood: (a as any).mood ?? "neutral",
+                fear: a.fear ?? 0.2,
+                lucidity: a.lucidity ?? 0.3,
+                uncertainty: a.uncertainty ?? 0.3,
+                motifs: parseAnalysis(dream.analysis).motifs.map((m: any) => m.label),
+                summary: a.summary,
+              }}
+              size={64}
+            />
           )}
         </div>
-        <h1 className="font-display tracking-display text-4xl sm:text-5xl leading-tight balance">
-          {dream.title || "A dream, partially recalled"}
-        </h1>
       </motion.div>
 
       {/* OBSERVED — raw memory */}
@@ -463,10 +484,40 @@ export function DreamDetailView() {
             </section>
           )}
 
+          {/* r12 — Dream Laws: recurring internal rules of this dream. */}
+          {Array.isArray((a as any).dreamLaws) && (a as any).dreamLaws.length > 0 && (
+            <section className="mt-12">
+              <SectionLabel icon={Scroll} tag="07 · Dream laws" label="Recurring internal rules" />
+              <p className="mt-2 text-[13px] text-muted-foreground pretty">
+                Patterns the dream itself seems to follow — derived from what you recorded. The
+                Arcade uses these for internal consistency; they are advisory, never authoritative.
+              </p>
+              <ul className="mt-4 space-y-2">
+                {(a as any).dreamLaws.map((law: any, i: number) => (
+                  <li key={i} className="surface p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 font-data text-[11px] text-muted-foreground/70 shrink-0">
+                        {String(i + 1).padStart(2, "0")}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm sm:text-base leading-relaxed pretty">{law.law}</p>
+                        {law.evidence ? (
+                          <p className="mt-1.5 text-[12px] text-muted-foreground italic pretty">
+                            from &ldquo;{law.evidence}&rdquo;
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
+
           {/* Interpretations */}
           {a.interpretations.length > 0 && (
             <section className="mt-12">
-              <SectionLabel icon={Sparkles} tag="07 · Possible interpretation" label="AI-generated reflection" />
+              <SectionLabel icon={Sparkles} tag="08 · Possible interpretation" label="AI-generated reflection" />
               <div className="mt-4 space-y-3">
                 {a.interpretations.map((it, i) => (
                   <InterpretationCard key={i} interp={it} />
@@ -1078,6 +1129,7 @@ function Meter({
 function InterpretationCard({ interp }: { interp: Interpretation }) {
   const c = interp.confidence;
   const tag = c < 0.35 ? "tentative" : c < 0.65 ? "moderate" : "considered";
+  const evidence = (interp as any).evidence as string[] | undefined;
   return (
     <div className="surface p-5">
       <div className="flex items-center justify-between mb-2">
@@ -1098,6 +1150,24 @@ function InterpretationCard({ interp }: { interp: Interpretation }) {
           {(c * 100).toFixed(0)}%
         </span>
       </div>
+      {/* r12 — EVIDENCE: the verbatim phrases from the dream that grounded
+          this interpretation. Surfaced so the dreamer can see WHY the AI
+          offered it, not just that it did. Empty when the model couldn't
+          ground it (which itself is honest signal). */}
+      {Array.isArray(evidence) && evidence.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-border/50">
+          <div className="text-[10px] tracking-caps uppercase text-muted-foreground mb-2">
+            Grounded in your words
+          </div>
+          <ul className="space-y-1.5">
+            {evidence.map((q, i) => (
+              <li key={i} className="text-[13px] leading-snug text-foreground/80 italic pretty">
+                &ldquo;{q}&rdquo;
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -1131,6 +1201,10 @@ function parseAnalysis(a: any): DreamAnalysisData {
     interpretations: j("interpretationsJson"),
     relationships: j("relationshipsJson"),
     historicalConnections: j("historicalConnectionsJson"),
+    // r12 — Dream Laws + evidence-based reflection. Both advisory; both
+    // surfaced in the UI for transparency ("why did the AI say this?").
+    dreamLaws: j("dreamLawsJson"),
+    evidence: j("evidenceJson"),
     mood: (a as any).mood ?? "neutral",
   };
 }

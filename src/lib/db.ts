@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client'
 // Bump this whenever the Prisma schema changes during development.
 // The running dev server keeps a singleton client in globalThis; without this
 // check a stale client (missing new columns) would keep serving old queries.
-const SCHEMA_VERSION = 'v4-story-share'
+const SCHEMA_VERSION = 'v12-memory-graph'
 
 const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined

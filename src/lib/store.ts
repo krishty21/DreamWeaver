@@ -16,7 +16,8 @@ export type View =
   | "profile"
   | "shared"
   | "story"
-  | "echo";
+  | "echo"
+  | "threads"; // r12 — Dream Memory Graph (canonical entities + evolution)
 
 type AppState = {
   view: View;
@@ -49,7 +50,7 @@ function parseHash(): { view: View; activeDreamId: string | null; activeSessionI
   const h = (typeof window !== "undefined" ? window.location.hash : "").replace(/^#\/?/, "");
   const [head, ...rest] = h.split("/");
   const view = (head as View) || "landing";
-  const valid: View[] = ["landing", "auth", "dashboard", "capture", "journal", "dream", "patterns", "atlas", "arcade", "session", "profile", "shared", "story", "echo"];
+  const valid: View[] = ["landing", "auth", "dashboard", "capture", "journal", "dream", "patterns", "atlas", "arcade", "session", "profile", "shared", "story", "echo", "threads"];
   if (!valid.includes(view) || !view) return { view: "landing", activeDreamId: null, activeSessionId: null, activeShareToken: null, journalDate: null, echoDreamId: null };
   let dreamId: string | null = null;
   let sessionId: string | null = null;

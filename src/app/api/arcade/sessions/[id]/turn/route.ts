@@ -3,7 +3,9 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateArcadeTurn } from "@/lib/ai";
 import { applyDelta, endingText } from "@/lib/simulation";
-import type { SimulationState } from "@/lib/types";
+import { computeMemoryEcho } from "@/lib/memory-graph";
+import { acquireLock, lockKey, rateLimit, rateKey } from "@/lib/rate-limit";
+import type { SimulationState, DreamLaw } from "@/lib/types";
 import { z } from "zod";
 
 const turnSchema = z.object({
@@ -71,6 +73,29 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const actionText = userAction || "I enter the dream.";
 
+  // r12 — concurrency + abuse protection (directive §25, §26).
+  // (a) Per-session single-flight lock: a double-submit / refresh / parallel
+  //     request for the SAME session would otherwise create two turns and
+  //     corrupt authoritative state. The lock auto-expires after 90s (the
+  //     model rarely exceeds this; the lock is a safety net).
+  // (b) Per-user rate limit: cap turn generation to 30/min so a malicious
+  //     client cannot burn Gemini quota.
+  const lock = acquireLock(lockKey("arcade-turn", session.id), { ttlMs: 90_000 });
+  if (!lock.acquired) {
+    return NextResponse.json(
+      { error: "A turn for this dream is already forming. Let it settle before acting again." },
+      { status: 409 }
+    );
+  }
+  const rl = rateLimit(rateKey("arcade-turn", userId), { max: 30, windowMs: 60_000 });
+  if (!rl.ok) {
+    lock.release();
+    return NextResponse.json(
+      { error: "You're moving through the dream a little too fast. Pause for a moment." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
+    );
+  }
+
   // Build authoritative current state.
   let state: SimulationState;
   try {
@@ -88,6 +113,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const dreamMotifs = session.dream.motifs.map((m) => m.label);
 
+  // r12 — Dream Laws: recurring internal rules of the source dream. Passed to
+  // the model for internal consistency (advisory; never authoritative).
+  let dreamLaws: DreamLaw[] = [];
+  try {
+    dreamLaws = JSON.parse(session.dream.analysis?.dreamLawsJson || "[]");
+  } catch {
+    dreamLaws = [];
+  }
+
+  // r12 — Historical connections: motifs in THIS dream that also appear in the
+  // dreamer's prior dreams. Computed app-side (authoritative); passed to the
+  // model so it can naturally reference historically-resonant elements. The
+  // model never decides whether to surface a MEMORY ECHO — the app does that
+  // after the turn, based on what motifs the scene actually referenced.
+  const historicalConnections = (() => {
+    try {
+      const hc = JSON.parse(session.dream.analysis?.historicalConnectionsJson || "[]");
+      return (Array.isArray(hc) ? hc : []).map((c: any) => ({
+        motif: String(c.motif),
+        priorDreamCount: Array.isArray(c.dreamIds) ? c.dreamIds.length : 0,
+      }));
+    } catch {
+      return [];
+    }
+  })();
+
   // Ask the model for the next scene + proposed delta.
   const { response, raw } = await generateArcadeTurn({
     mode: session.mode as any,
@@ -96,54 +147,101 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     history,
     userAction: actionText,
     dreamMotifs,
+    dreamLaws,
+    historicalConnections,
   });
 
   // App validates + applies the delta (authoritative).
   const { state: newState, applied, ending } = applyDelta(state, response.proposedDelta);
 
+  // r12 — MEMORY ECHO: selectively surface a historical connection when the
+  // turn's scene references a motif that also appears in a prior dream.
+  // Selectivity rule (directive §16: "historical retrieval must be selective.
+  // Do not interrupt gameplay constantly. Do not inject irrelevant memories."):
+  //   - only when there ARE historical connections in this dream
+  //   - only on turns where the model surfaced a discovered motif OR referenced
+  //     a known motif in the scene text (we scan for known-motif labels)
+  //   - cap frequency: at most every 3rd turn, and never on the very first turn
+  //     (let the dream establish itself before echoing)
+  let memoryEcho: Awaited<ReturnType<typeof computeMemoryEcho>> = null;
   const turnNumber = session.turns.length + 1;
-
-  // Persist the turn (with both proposed and applied deltas for transparency).
-  const turn = await db.sessionTurn.create({
-    data: {
-      sessionId: session.id,
-      turnNumber,
-      userAction: actionText,
-      sceneText: response.sceneText,
-      choicesJson: JSON.stringify(response.choices),
-      proposedStateDeltaJson: JSON.stringify(response.proposedDelta),
-      discoveredMotifsJson: JSON.stringify(response.discoveredMotifs),
-      appliedDeltaJson: JSON.stringify(applied),
-      isEnding: !!ending,
-      endingType: ending ?? null,
-    },
-  });
-
-  let updatedSession = session;
-  if (ending) {
-    updatedSession = await db.arcadeSession.update({
-      where: { id: session.id },
-      data: {
-        status: "ended",
-        ending,
-        stateJson: JSON.stringify(newState),
-      },
-    }) as any;
-  } else {
-    updatedSession = await db.arcadeSession.update({
-      where: { id: session.id },
-      data: { stateJson: JSON.stringify(newState) },
-    }) as any;
+  const shouldConsiderEcho =
+    historicalConnections.length > 0 &&
+    turnNumber > 1 &&
+    (turnNumber % 3 === 0 || response.discoveredMotifs.length > 0);
+  if (shouldConsiderEcho) {
+    // candidate motifs = discovered this turn + known motifs whose label appears
+    // in the scene text (the scene "referenced" them)
+    const sceneText = response.sceneText.toLowerCase();
+    const referenced = dreamMotifs.filter((m) => m && sceneText.includes(m.toLowerCase()));
+    const candidates = Array.from(
+      new Set([...response.discoveredMotifs, ...referenced])
+    ).filter(Boolean);
+    if (candidates.length > 0) {
+      try {
+        memoryEcho = await computeMemoryEcho({
+          userId,
+          currentDreamId: session.dreamId,
+          sceneMotifs: candidates,
+        });
+      } catch (e) {
+        console.warn("[arcade turn] memory echo failed (non-fatal):", e instanceof Error ? e.message : e);
+      }
+    }
   }
+  if (memoryEcho) response.memoryEcho = memoryEcho;
 
-  return NextResponse.json({
-    turn,
-    state: newState,
-    choices: response.choices,
-    discoveredMotifs: response.discoveredMotifs,
-    ending: ending
-      ? { type: ending, ...endingText(ending) }
-      : null,
-    reasoning: response.proposedDelta.reasoning ?? null,
-  });
+  try {
+    // Persist the turn (with both proposed and applied deltas for transparency).
+    const turn = await db.sessionTurn.create({
+      data: {
+        sessionId: session.id,
+        turnNumber,
+        userAction: actionText,
+        sceneText: response.sceneText,
+        choicesJson: JSON.stringify(response.choices),
+        proposedStateDeltaJson: JSON.stringify(response.proposedDelta),
+        discoveredMotifsJson: JSON.stringify(response.discoveredMotifs),
+        appliedDeltaJson: JSON.stringify(applied),
+        isEnding: !!ending,
+        endingType: ending ?? null,
+      },
+    });
+
+    let updatedSession = session;
+    if (ending) {
+      updatedSession = await db.arcadeSession.update({
+        where: { id: session.id },
+        data: {
+          status: "ended",
+          ending,
+          stateJson: JSON.stringify(newState),
+        },
+      }) as any;
+    } else {
+      updatedSession = await db.arcadeSession.update({
+        where: { id: session.id },
+        data: { stateJson: JSON.stringify(newState) },
+      }) as any;
+    }
+
+    return NextResponse.json({
+      turn,
+      state: newState,
+      choices: response.choices,
+      discoveredMotifs: response.discoveredMotifs,
+      // r12 — the selective historical-connection notice. Null when the app
+      // decided not to surface an echo this turn (the default).
+      memoryEcho: response.memoryEcho ?? null,
+      ending: ending
+        ? { type: ending, ...endingText(ending) }
+        : null,
+      reasoning: response.proposedDelta.reasoning ?? null,
+    });
+  } finally {
+    // r12 — always release the per-session single-flight lock so the next
+    // turn can proceed (even if persistence threw; the lock would otherwise
+    // wait for its TTL).
+    lock.release();
+  }
 }

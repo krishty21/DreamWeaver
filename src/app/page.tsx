@@ -20,6 +20,7 @@ import { ProfileView } from "@/components/views/profile-view";
 import { SharedDreamView } from "@/components/views/shared-dream-view";
 import { StoryView } from "@/components/views/story-view";
 import { EchoView } from "@/components/views/echo-view";
+import { ThreadsView } from "@/components/views/threads-view";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { AnimatePresence, motion } from "framer-motion";
 import { Loader2 } from "lucide-react";
@@ -172,6 +173,8 @@ function renderView(view: View) {
       return <ArcadeSessionView />;
     case "echo":
       return <EchoView />;
+    case "threads":
+      return <ThreadsView />;
     case "profile":
       return <ProfileView />;
     default:
@@ -184,7 +187,7 @@ function moodFor(view: View): string {
   if (view === "session" || view === "arcade" || view === "story") return "surreal";
   if (view === "capture") return "lucid";
   if (view === "dream" || view === "shared") return "melancholic";
-  if (view === "atlas" || view === "echo") return "lucid";
+  if (view === "atlas" || view === "echo" || view === "threads") return "lucid";
   if (view === "patterns") return "neutral";
   return "neutral";
 }

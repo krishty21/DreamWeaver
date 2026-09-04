@@ -24,6 +24,9 @@ export type EntityItem = {
 export type Interpretation = {
   text: string;
   confidence: number; // 0..1, advisory
+  // r12 — short quote(s) from the raw dream text that grounded this
+  // interpretation, so the dreamer can see WHY it was offered. Advisory.
+  evidence?: string[];
 };
 
 export type Relationship = {
@@ -54,7 +57,19 @@ export type DreamAnalysisData = {
   interpretations: Interpretation[];
   relationships: Relationship[];
   historicalConnections: HistoricalConnection[];
+  // r12 — DREAM LAWS: a small number of recurring internal rules the model
+  // believes govern this dream. Advisory only; the Arcade uses them as
+  // context for internal consistency, never as authoritative state.
+  dreamLaws?: DreamLaw[];
   mood: Mood;
+};
+
+// r12 — a recurring internal rule derived from the dream's source material
+// (e.g. "every clock shows the same time", "doors lead unexpectedly somewhere").
+// `evidence` is a short quote from the raw dream supporting the law.
+export type DreamLaw = {
+  law: string;
+  evidence?: string;
 };
 
 export type Mood = "neutral" | "tense" | "lucid" | "melancholic" | "surreal";
@@ -102,6 +117,27 @@ export type ArcadeTurnResponse = {
   choices: ArcadeChoice[];
   proposedDelta: ProposedDelta;
   discoveredMotifs: string[];
+  // r12 — MEMORY ECHO: when the model references an element that also appears
+  // in the dreamer's prior recorded dreams, the app may attach a subtle
+  // historical-connection notice. This is APP-COMPUTED (never trusted from
+  // model text) and surfaced to the UI as a restrained, optional aside —
+  // never interrupting gameplay, never injecting irrelevant memories.
+  memoryEcho?: MemoryEcho;
+};
+
+// r12 — a subtle historical-connection notice shown inside the Arcade when a
+// motif or element in the current scene also appears in a prior dream.
+// "The lighthouse appeared in another dream you recorded 11 days ago."
+// `selective` = true means the app decided this echo is worth surfacing
+// (the model never decides; it only proposes narrative that may reference
+// historically-significant elements, and the app checks + attaches).
+export type MemoryEcho = {
+  motif: string; // the canonical entity label that connects the dreams
+  priorDreamId: string;
+  priorDreamTitle: string;
+  priorDreamDate: string; // ISO
+  daysApart: number;
+  note: string; // editorial one-liner
 };
 
 export type ArcadeMode = "replay" | "rewrite" | "confront";
@@ -185,4 +221,75 @@ export type PatternReport = {
   // r11 — words the dreamer muted from the lexicon cloud, newest first.
   // Carried on the report so the restore affordance needs no extra fetch.
   lexiconIgnored?: string[];
+  // r12 — DREAM MEMORY GRAPH: canonical entities (the unified dream-memory
+  // nodes) with their longitudinal threads + evolution. Computed app-side
+  // by the memory-graph reconciler; the model is never involved.
+  threads: DreamThread[];
+};
+
+// r12 — DREAM MEMORY GRAPH types.
+
+// A canonical entity: the conceptual node unifying different surface forms
+// of the same dream element ("faceless figure" ≈ "faceless person").
+export type EntityCluster = {
+  id: string;
+  label: string; // canonical label
+  type: string; // symbol | person | place | action | emotion
+  aliases: string[]; // other surface forms clustered in
+  mentionCount: number;
+  dreamCount: number;
+  dreamIds: string[];
+  firstSeen: string; // ISO
+  lastSeen: string; // ISO
+  // Per-mention emotional telemetry, oldest-first (for the evolution chart).
+  mentions: EntityMentionPoint[];
+};
+
+// One mention of an entity inside one dream — the longitudinal point shape.
+export type EntityMentionPoint = {
+  mentionId: string;
+  dreamId: string;
+  dreamTitle: string;
+  date: string; // ISO
+  surfaceLabel: string; // the form used in this dream
+  note?: string | null;
+  role: string; // reconciler-assigned editorial role
+  fear: number; // 0..1
+  lucidity: number; // 0..1
+  mood: Mood;
+};
+
+// A Dream Thread = a canonical entity traced through time, with the
+// evolution of its role. This is what the Threads view renders: "this thing
+// has appeared in N dreams; its role has changed across them."
+export type DreamThread = {
+  id: string;
+  label: string;
+  type: string;
+  aliases: string[];
+  mentionCount: number;
+  dreamCount: number;
+  firstSeen: string;
+  lastSeen: string;
+  // Evolution summary — how the entity's role shifted across dreams.
+  // e.g. "first it was fled; now it is confronted."
+  evolution: MotifEvolution;
+  // Chronological mentions (oldest-first), capped at ~30 for UI weight.
+  mentions: EntityMentionPoint[];
+  // Co-occurring entities — other elements that frequently appear in the
+  // same dreams as this one (the associative neighbourhood in the graph).
+  associatedWith: { label: string; type: string; count: number }[];
+};
+
+// A description of how a motif's role has changed across dreams. Editorial,
+// non-clinical — describes the dreamer's recorded narratives, not the dreamer.
+export type MotifEvolution = {
+  // Short editorial phrases, oldest-first: ["fled from", "watched", "approached", "confronted"].
+  roles: string[];
+  // One-line human-readable summary, e.g. "its role has shifted from fleeing to confronting."
+  summary: string;
+  // Whether the telemetry suggests a meaningful shift (>0.15 fear delta or role text changed).
+  hasShift: boolean;
+  // Fear telemetry across mentions, oldest-first (for the sparkline).
+  fearArc: number[];
 };

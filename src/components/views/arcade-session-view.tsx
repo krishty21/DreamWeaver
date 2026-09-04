@@ -8,7 +8,7 @@ import { ArrowLeft, Loader2, Send, Compass, RotateCcw, Brain, Sparkles, Moon, Sh
 import { motion, AnimatePresence } from "framer-motion";
 import { useEffect, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import type { SimulationState, ArcadeChoice } from "@/lib/types";
+import type { SimulationState, ArcadeChoice, MemoryEcho } from "@/lib/types";
 
 async function fetchSession(id: string) {
   const res = await fetch(`/api/arcade/sessions/${id}`);
@@ -38,6 +38,12 @@ export function ArcadeSessionView() {
   // r6: live-streamed scene text from the model — replaces the static shimmer
   // with text that types itself as Gemini produces it.
   const [streamingScene, setStreamingScene] = useState("");
+  // r12 — the latest MEMORY ECHO (a selective historical-connection notice
+  // the app attached to the most recent turn). Transient by design: it shows
+  // for the current turn, then clears on the next. Not persisted on the turn
+  // row because echoes are occasional, contextual asides — not part of the
+  // dream's authoritative record.
+  const [lastEcho, setLastEcho] = useState<MemoryEcho | null>(null);
 
   // While a turn is pending: rotate whispers + count seconds, so waiting feels
   // like drifting rather than stalling.
@@ -98,6 +104,8 @@ export function ArcadeSessionView() {
     if (pending || ended) return;
     setPending(true);
     setStreamingScene("");
+    // r12 — clear the previous turn's echo so a fresh one can surface this turn.
+    setLastEcho(null);
     try {
       // r6: SSE streaming turn — the scene text types itself as the model
       // produces it. The endpoint emits delta + final events; we parse the
@@ -159,6 +167,8 @@ export function ArcadeSessionView() {
       qc.invalidateQueries({ queryKey: ["session", session.id] });
       qc.invalidateQueries({ queryKey: ["sessions"] });
       setAction("");
+      // r12 — capture the memory echo for this turn (transient display).
+      setLastEcho(finalPayload.memoryEcho ?? null);
       if (finalPayload.ending) {
         toast({ title: finalPayload.ending.title, description: finalPayload.ending.body });
       }
@@ -284,6 +294,37 @@ export function ArcadeSessionView() {
             </motion.div>
           );
         })}
+
+        {/* r12 — MEMORY ECHO: a subtle, selective historical-connection aside
+            that the app attached to the most recent turn (never the model).
+            Shown only when the app decided to surface one, and only briefly —
+            it clears on the next turn. Never interrupts gameplay; appears as
+            a quiet margin-note below the latest scene. */}
+        <AnimatePresence>
+          {lastEcho && !pending && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.4 }}
+            >
+              <div className="memory-echo">
+                <div className="memory-echo-label">
+                  <Sparkles className="h-3 w-3" strokeWidth={1.6} />
+                  Memory echo
+                </div>
+                <p className="pretty">{lastEcho.note}</p>
+                <button
+                  onClick={() => navigate("dream", { dreamId: lastEcho.priorDreamId })}
+                  className="mt-2 inline-flex items-center gap-1 text-[11px] font-data tracking-caps uppercase text-foreground/70 hover:text-foreground transition-colors"
+                >
+                  Open that dream
+                  <Compass className="h-3 w-3" strokeWidth={1.6} />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* loading turn — the dream forms. r6: scene text types itself as
             the model streams it; the shimmer is replaced by actual prose the

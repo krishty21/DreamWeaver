@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { analyzeDream } from "@/lib/ai";
+import { reconcileUserGraph } from "@/lib/memory-graph";
+import { rateLimit, rateKey } from "@/lib/rate-limit";
 import type { DreamAnalysisData } from "@/lib/types";
 import { z } from "zod";
 
@@ -50,6 +52,18 @@ export async function POST(req: Request) {
     );
   }
   const rawText = parsed.data.rawText.slice(0, 8000);
+
+  // r12 — abuse resistance (directive §26): cap dream-analysis calls per user.
+  // Gemini analysis is expensive; a malicious or impatient client spamming
+  // POST would burn model quota. 6 captures / 10 min is generous for real use
+  // (one capture on waking) and hostile to script kiddies. Retry-After in ms.
+  const rl = rateLimit(rateKey("dream-analyze", userId), { max: 6, windowMs: 10 * 60_000 });
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "You're capturing dreams a little too fast. Pause for a moment and try again." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
+    );
+  }
 
   // gather prior dream history for the analyzer (motifs + dates + summaries)
   const prior = await db.dream.findMany({
@@ -126,6 +140,16 @@ export async function POST(req: Request) {
         interpretationsJson: JSON.stringify(analysisData.interpretations),
         relationshipsJson: JSON.stringify(analysisData.relationships),
         historicalConnectionsJson: JSON.stringify(historicalConnections),
+        // r12 — Dream Laws (recurring internal rules) + Evidence (verbatim
+        // phrases grounding each interpretation). Both advisory; both persisted
+        // for the transparency layer ("why did the AI say this?").
+        dreamLawsJson: JSON.stringify(analysisData.dreamLaws ?? []),
+        evidenceJson: JSON.stringify(
+          (analysisData.interpretations ?? []).map((i) => ({
+            interpretation: i.text,
+            evidence: i.evidence ?? [],
+          }))
+        ),
         modelRawJson: modelRaw.slice(0, 20000),
       },
     });
@@ -176,6 +200,17 @@ export async function POST(req: Request) {
     });
     dream.title = analysisData.title;
     dream.mood = analysisData.mood;
+
+    // r12 — reconcile the Dream Memory Graph: cluster this dream's motifs into
+    // canonical Entities + EntityMentions so the longitudinal threads layer
+    // (Threads view, Atlas, Memory Echo in Arcade) reflects the new memory.
+    // Runs app-side, idempotent, scoped to this user. Failures are non-fatal —
+    // the dream is already saved; the graph catches up on the next analysis.
+    try {
+      await reconcileUserGraph(userId);
+    } catch (e) {
+      console.warn("[dreams] memory-graph reconcile failed (non-fatal):", e instanceof Error ? e.message : e);
+    }
   }
 
   const refreshed = await db.dream.findUnique({

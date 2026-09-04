@@ -3,6 +3,7 @@
 // The model never produces these directly — it only proposes per-dream motifs.
 
 import { db } from "@/lib/db";
+import { reconcileUserGraph, computeThreads } from "@/lib/memory-graph";
 import type {
   PatternReport,
   MotifFrequency,
@@ -243,5 +244,22 @@ export async function computePatternReport(userId: string): Promise<PatternRepor
     timeline,
     lexicon: computeLexicon(dreams.map((d) => ({ text: d.rawText ?? "" })), new Set(lexiconIgnored)),
     lexiconIgnored,
+    // r12 — Dream Memory Graph threads (canonical entities + evolution).
+    // Lazy-backfill the graph if the user has motifs but no entities (so
+    // accounts whose dreams predate r12 get threads on first pattern load).
+    // Failures are non-fatal — the report still returns, just with empty threads.
+    threads: await (async () => {
+      try {
+        const motifCount = dreams.reduce((acc, d) => acc + d.motifs.length, 0);
+        const entityCount = await db.entity.count({ where: { userId } });
+        if (motifCount > 0 && entityCount === 0) {
+          await reconcileUserGraph(userId);
+        }
+        return await computeThreads(userId);
+      } catch (e) {
+        console.warn("[patterns] threads computation failed (non-fatal):", e instanceof Error ? e.message : e);
+        return [];
+      }
+    })(),
   };
 }

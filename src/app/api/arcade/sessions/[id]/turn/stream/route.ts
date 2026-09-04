@@ -3,7 +3,9 @@ import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { generateArcadeTurnStreaming } from "@/lib/ai";
 import { applyDelta, endingText } from "@/lib/simulation";
-import type { SimulationState } from "@/lib/types";
+import { computeMemoryEcho } from "@/lib/memory-graph";
+import { acquireLock, lockKey, rateLimit, rateKey } from "@/lib/rate-limit";
+import type { SimulationState, DreamLaw } from "@/lib/types";
 import { z } from "zod";
 
 // POST /api/arcade/sessions/[id]/turn/stream
@@ -73,6 +75,27 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
   const actionText = userAction || "I enter the dream.";
 
+  // r12 — concurrency + rate-limit guard (see non-streaming route). For the
+  // streaming path the lock lives across the whole background turn and is
+  // released in the finally of the IIFE below. If a second request arrives
+  // while the first is still streaming, it gets 409 and the client shows a
+  // clear "a turn is already forming" message.
+  const lock = acquireLock(lockKey("arcade-turn", session.id), { ttlMs: 90_000 });
+  if (!lock.acquired) {
+    return NextResponse.json(
+      { error: "A turn for this dream is already forming. Let it settle before acting again." },
+      { status: 409 }
+    );
+  }
+  const rl = rateLimit(rateKey("arcade-turn", userId), { max: 30, windowMs: 60_000 });
+  if (!rl.ok) {
+    lock.release();
+    return NextResponse.json(
+      { error: "You're moving through the dream a little too fast. Pause for a moment." },
+      { status: 429, headers: { "Retry-After": String(Math.ceil(rl.retryAfterMs / 1000)) } }
+    );
+  }
+
   // Build authoritative current state.
   let state: SimulationState;
   try {
@@ -88,6 +111,25 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }));
 
   const dreamMotifs = session.dream.motifs.map((m) => m.label);
+
+  // r12 — Dream Laws + historical connections (see non-streaming turn route).
+  let dreamLaws: DreamLaw[] = [];
+  try {
+    dreamLaws = JSON.parse(session.dream.analysis?.dreamLawsJson || "[]");
+  } catch {
+    dreamLaws = [];
+  }
+  const historicalConnections = (() => {
+    try {
+      const hc = JSON.parse(session.dream.analysis?.historicalConnectionsJson || "[]");
+      return (Array.isArray(hc) ? hc : []).map((c: any) => ({
+        motif: String(c.motif),
+        priorDreamCount: Array.isArray(c.dreamIds) ? c.dreamIds.length : 0,
+      }));
+    } catch {
+      return [];
+    }
+  })();
 
   // Set up the SSE response. We use a TransformStream so we can write text
   // chunks to the client as they arrive.
@@ -111,6 +153,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
           history,
           userAction: actionText,
           dreamMotifs,
+          dreamLaws,
+          historicalConnections,
         },
         (delta) => send({ type: "delta", text: delta })
       );
@@ -119,6 +163,32 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       const { state: newState, applied, ending } = applyDelta(state, response.proposedDelta);
 
       const turnNumber = session.turns.length + 1;
+
+      // r12 — selective MEMORY ECHO (see non-streaming route for the rule).
+      let memoryEcho: Awaited<ReturnType<typeof computeMemoryEcho>> = null;
+      const shouldConsiderEcho =
+        historicalConnections.length > 0 &&
+        turnNumber > 1 &&
+        (turnNumber % 3 === 0 || response.discoveredMotifs.length > 0);
+      if (shouldConsiderEcho) {
+        const sceneText = response.sceneText.toLowerCase();
+        const referenced = dreamMotifs.filter((m) => m && sceneText.includes(m.toLowerCase()));
+        const candidates = Array.from(
+          new Set([...response.discoveredMotifs, ...referenced])
+        ).filter(Boolean);
+        if (candidates.length > 0) {
+          try {
+            memoryEcho = await computeMemoryEcho({
+              userId,
+              currentDreamId: session.dreamId,
+              sceneMotifs: candidates,
+            });
+          } catch (e) {
+            console.warn("[arcade stream] memory echo failed (non-fatal):", e instanceof Error ? e.message : e);
+          }
+        }
+      }
+      if (memoryEcho) response.memoryEcho = memoryEcho;
 
       const turn = await db.sessionTurn.create({
         data: {
@@ -157,6 +227,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         state: newState,
         choices: response.choices,
         discoveredMotifs: response.discoveredMotifs,
+        // r12 — selective historical-connection notice.
+        memoryEcho: response.memoryEcho ?? null,
         ending: ending
           ? { type: ending, ...endingText(ending) }
           : null,
@@ -167,6 +239,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       send({ type: "error", error: e?.message ?? "The dream faltered." });
     } finally {
       writer.close();
+      // r12 — release the per-session single-flight lock so the next turn
+      // can proceed immediately (rather than waiting for the TTL).
+      lock.release();
     }
   })();
 

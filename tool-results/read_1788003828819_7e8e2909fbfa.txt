@@ -1,0 +1,764 @@
+     1→// AI service — Gemini stand-in via z-ai-web-dev-sdk.
+     2→// CRITICAL PRINCIPLE: "Model output is never trusted as application state."
+     3→// The model proposes; the application validates and applies. All structured
+     4→// output is parsed defensively and clamped to safe ranges before persistence.
+     5→
+     6→import ZAI from "z-ai-web-dev-sdk";
+     7→import { z } from "zod";
+     8→import type {
+     9→  ArcadeMode,
+    10→  ArcadeTurnResponse,
+    11→  DreamAnalysisData,
+    12→  SimulationState,
+    13→  ProposedDelta,
+    14→} from "@/lib/types";
+    15→import { DREAM_ANALYSIS_PROMPT, ARCADE_SYSTEM_PROMPT } from "@/lib/prompts";
+    16→
+    17→let _zai: any = null;
+    18→async function zai() {
+    19→  if (!_zai) _zai = await ZAI.create();
+    20→  return _zai;
+    21→}
+    22→
+    23→// ---------- Helpers ----------
+    24→
+    25→function clamp(n: unknown, lo = 0, hi = 1): number {
+    26→  const v = typeof n === "number" ? n : Number(n);
+    27→  if (!isFinite(v)) return lo;
+    28→  return Math.max(lo, Math.min(hi, v));
+    29→}
+    30→
+    31→// Normalize common model quirks before parsing: smart quotes, // and /* */
+    32→// comments, BOM, zero-width chars.
+    33→function normalizeJSONSource(t: string): string {
+    34→  return t
+    35→    .replace(/\uFEFF/g, "")
+    36→    .replace(/[\u200B-\u200D\u2060]/g, "")
+    37→    .replace(/[\u201C\u201D]/g, '"')
+    38→    .replace(/[\u2018\u2019]/g, "'")
+    39→    .replace(/[\u2013\u2014]/g, "-")
+    40→    // line comments (only outside strings — the crude strip below is safe
+    41→    // enough for model output where // almost always starts a comment)
+    42→    .replace(/^\s*\/\/.*$/gm, "")
+    43→    .replace(/\/\*[\s\S]*?\*\//g, "");
+    44→}
+    45→
+    46→// Attempt JSON.parse with progressively more aggressive repairs.
+    47→function parseWithRepairs(s: string): any | null {
+    48→  // 1. direct parse
+    49→  try {
+    50→    return JSON.parse(s);
+    51→  } catch {}
+    52→
+    53→  // 2. trailing commas
+    54→  try {
+    55→    return JSON.parse(s.replace(/,\s*([}\]])/g, "$1"));
+    56→  } catch {}
+    57→
+    58→  // 3. truncated output — cut back to the last value that parsed cleanly,
+    59→  //    then close any open brackets/braces.
+    60→  try {
+    61→    const repaired = repairTruncated(s.replace(/,\s*([}\]])/g, "$1"));
+    62→    if (repaired) return JSON.parse(repaired);
+    63→  } catch {}
+    64→
+    65→  return null;
+    66→}
+    67→
+    68→// Repair a truncated JSON document: terminate a dangling string, strip the
+    69→// tail after the last complete value if possible, then close open structures.
+    70→function repairTruncated(s: string): string | null {
+    71→  // Walk the string tracking string-state and open brackets.
+    72→  let inString = false;
+    73→  let escape = false;
+    74→  const stack: string[] = [];
+    75→  let lastSafe = -1; // index of the last "clean value boundary" outside strings
+    76→  for (let i = 0; i < s.length; i++) {
+    77→    const ch = s[i];
+    78→    if (escape) {
+    79→      escape = false;
+    80→      continue;
+    81→    }
+    82→    if (ch === "\\" && inString) {
+    83→      escape = true;
+    84→      continue;
+    85→    }
+    86→    if (ch === '"') {
+    87→      inString = !inString;
+    88→      continue;
+    89→    }
+    90→    if (inString) continue;
+    91→    if (ch === "{" || ch === "[") stack.push(ch);
+    92→    else if (ch === "}" || ch === "]") stack.pop();
+    93→    else if (ch === "," && stack.length > 0) lastSafe = i;
+    94→  }
+    95→  if (stack.length === 0) return null; // nothing to close — not truncation-shaped
+    96→
+    97→  // Cut at the last comma that sat inside an open structure (drops the
+    98→  // incomplete trailing value), unless that would discard the only content.
+    99→  let out: string;
+   100→  if (lastSafe > 0) {
+   101→    out = s.slice(0, lastSafe).replace(/[,\s]+$/, "");
+   102→  } else {
+   103→    // No safe comma boundary — keep everything; if we're mid-string,
+   104→    // terminate the string so the document can still be closed.
+   105→    out = s.replace(/[,\s]+$/, "");
+   106→    if (inString) out += '"';
+   107→  }
+   108→
+   109→  // Recompute the open-structure stack on the trimmed source.
+   110→  let inStr2 = false;
+   111→  let esc2 = false;
+   112→  const stack2: string[] = [];
+   113→  for (let i = 0; i < out.length; i++) {
+   114→    const ch = out[i];
+   115→    if (esc2) {
+   116→      esc2 = false;
+   117→      continue;
+   118→    }
+   119→    if (ch === "\\" && inStr2) {
+   120→      esc2 = true;
+   121→      continue;
+   122→    }
+   123→    if (ch === '"') {
+   124→      inStr2 = !inStr2;
+   125→      continue;
+   126→    }
+   127→    if (inStr2) continue;
+   128→    if (ch === "{" || ch === "[") stack2.push(ch);
+   129→    else if (ch === "}" || ch === "]") stack2.pop();
+   130→  }
+   131→  if (inStr2) return null; // still malformed (e.g. stray quote) — give up
+   132→  while (stack2.length > 0) {
+   133→    const open = stack2.pop();
+   134→    out += open === "{" ? "}" : "]";
+   135→  }
+   136→  return out;
+   137→}
+   138→
+   139→// Try to extract a JSON object from a model response that may contain
+   140→// surrounding prose / code fences / truncation.
+   141→function extractJSON(text: string): any | null {
+   142→  if (!text) return null;
+   143→  // strip code fences
+   144→  let t = text.trim();
+   145→  const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+   146→  if (fence) t = fence[1].trim();
+   147→  t = normalizeJSONSource(t);
+   148→
+   149→  const firstBrace = t.indexOf("{");
+   150→  const firstBracket = t.indexOf("[");
+   151→  // A top-level array starts before any object — try the array first.
+   152→  const arrayFirst =
+   153→    firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace);
+   154→  if (arrayFirst) {
+   155→    const lastBracket = t.lastIndexOf("]");
+   156→    const candidate =
+   157→      lastBracket > firstBracket
+   158→        ? t.slice(firstBracket, lastBracket + 1) // possibly complete array
+   159→        : t.slice(firstBracket); // truncated array (final ] dropped)
+   160→    const parsedArr = parseWithRepairs(candidate);
+   161→    if (parsedArr !== null) return parsedArr;
+   162→  }
+   163→
+   164→  // Object extraction: first { ... last }, with truncation fallbacks.
+   165→  const first = firstBrace;
+   166→  const last = t.lastIndexOf("}");
+   167→  if (first === -1) return null;
+   168→  if (last > first) {
+   169→    const parsed = parseWithRepairs(t.slice(first, last + 1));
+   170→    if (parsed !== null) return parsed;
+   171→  }
+   172→  // Last resort: everything after the first { is a truncated object.
+   173→  return parseWithRepairs(t.slice(first));
+   174→}
+   175→
+   176→// ---------- Dream Analysis ----------
+   177→
+   178→const analysisSchema = z.object({
+   179→  title: z.string().max(120).default("Untitled dream"),
+   180→  summary: z.string().max(600),
+   181→  emotions: z
+   182→    .array(
+   183→      z.object({
+   184→        emotion: z.string(),
+   185→        intensity: z.number(),
+   186→        confidence: z.number().optional(),
+   187→      })
+   188→    )
+   189→    .max(10)
+   190→    .default([]),
+   191→  symbols: z
+   192→    .array(z.object({ label: z.string(), note: z.string().optional(), confidence: z.number().optional() }))
+   193→    .max(20)
+   194→    .default([]),
+   195→  motifs: z
+   196→    .array(z.object({ label: z.string(), note: z.string().optional(), confidence: z.number().optional() }))
+   197→    .max(20)
+   198→    .default([]),
+   199→  people: z
+   200→    .array(
+   201→      z.object({
+   202→        name: z.string(),
+   203→        role: z.string().optional(),
+   204→        note: z.string().optional(),
+   205→        confidence: z.number().optional(),
+   206→      })
+   207→    )
+   208→    .max(20)
+   209→    .default([]),
+   210→  locations: z
+   211→    .array(z.object({ label: z.string(), note: z.string().optional(), confidence: z.number().optional() }))
+   212→    .max(20)
+   213→    .default([]),
+   214→  actions: z
+   215→    .array(z.object({ label: z.string(), note: z.string().optional(), confidence: z.number().optional() }))
+   216→    .max(20)
+   217→    .default([]),
+   218→  lucidity: z.number().default(0.3),
+   219→  lucidityNote: z.string().optional(),
+   220→  fear: z.number().default(0.2),
+   221→  uncertainty: z.number().default(0.3),
+   222→  interpretations: z
+   223→    .array(z.object({ text: z.string(), confidence: z.number() }))
+   224→    .max(5)
+   225→    .default([]),
+   226→  relationships: z
+   227→    .array(z.object({ from: z.string(), to: z.string(), relation: z.string() }))
+   228→    .max(10)
+   229→    .default([]),
+   230→  mood: z
+   231→    .enum(["neutral", "tense", "lucid", "melancholic", "surreal"])
+   232→    .default("neutral"),
+   233→});
+   234→
+   235→function brief(raw: string): string {
+   236→  const s = JSON.stringify(raw);
+   237→  if (s.length <= 700) return s;
+   238→  // head + tail: truncation diagnosis needs the end of the response
+   239→  return `${s.slice(0, 400)} …[len ${s.length}]… ${s.slice(-260)}`;
+   240→}
+   241→
+   242→export async function analyzeDream(
+   243→  rawText: string,
+   244→  history: { dreamId: string; date: string; motifs: string[]; summary: string }[]
+   245→): Promise<{ data: DreamAnalysisData; raw: string }> {
+   246→  const prompt = DREAM_ANALYSIS_PROMPT(rawText, history);
+   247→  const client = await zai();
+   248→  const completion = await client.chat.completions.create({
+   249→    messages: [
+   250→      { role: "assistant", content: prompt.system },
+   251→      { role: "user", content: prompt.user },
+   252→    ],
+   253→    thinking: { type: "disabled" },
+   254→  });
+   255→  let raw = completion.choices?.[0]?.message?.content ?? "";
+   256→
+   257→  let parsed = extractJSON(raw);
+   258→  if (!parsed) {
+   259→    // One repair attempt: show the model its own invalid output and ask for
+   260→    // strict JSON only. Much cheaper for the user than losing the analysis.
+   261→    console.warn("[ai] analysis response was not parseable JSON — retrying once. head:", brief(raw));
+   262→    try {
+   263→      const retry = await client.chat.completions.create({
+   264→        messages: [
+   265→          { role: "assistant", content: prompt.system },
+   266→          { role: "user", content: prompt.user },
+   267→          { role: "assistant", content: raw.slice(0, 6000) },
+   268→          {
+   269→            role: "user",
+   270→            content:
+   271→              "Your previous response was not valid JSON (it may have contained prose, markdown, or was truncated). Return ONLY the JSON object — no prose, no code fences, no commentary. If some fields must be empty, use empty arrays or zero.",
+   272→          },
+   273→        ],
+   274→        thinking: { type: "disabled" },
+   275→      });
+   276→      raw = retry.choices?.[0]?.message?.content ?? "";
+   277→      parsed = extractJSON(raw);
+   278→    } catch (e) {
+   279→      console.warn("[ai] analysis repair attempt failed:", e);
+   280→    }
+   281→  }
+   282→  if (!parsed) {
+   283→    console.warn("[ai] analysis fallback engaged. head:", brief(raw));
+   284→    // graceful fallback — never let a malformed model response crash the app
+   285→    const fallback: DreamAnalysisData = {
+   286→      title: "A dream, partially recalled",
+   287→      summary: "The model returned an unexpected response. The raw dream is preserved; you can re-analyze later.",
+   288→      emotions: [],
+   289→      symbols: [],
+   290→      motifs: [],
+   291→      people: [],
+   292→      locations: [],
+   293→      actions: [],
+   294→      lucidity: 0.3,
+   295→      lucidityNote: "Analysis unavailable; default lucidity applied.",
+   296→      fear: 0.2,
+   297→      uncertainty: 0.5,
+   298→      interpretations: [
+   299→        {
+   300→          text: "AI reflection could not be produced reliably this time. The original dream is still saved.",
+   301→          confidence: 0.1,
+   302→        },
+   303→      ],
+   304→      relationships: [],
+   305→      historicalConnections: [],
+   306→      mood: "neutral",
+   307→    };
+   308→    return { data: fallback, raw };
+   309→  }
+   310→
+   311→  const safe = analysisSchema.parse(parsed);
+   312→
+   313→  // normalise + clamp (never trust model numbers blindly)
+   314→  const data: DreamAnalysisData = {
+   315→    title: safe.title.slice(0, 120),
+   316→    summary: safe.summary.slice(0, 600),
+   317→    emotions: safe.emotions.map((e) => ({
+   318→      emotion: String(e.emotion).slice(0, 60),
+   319→      intensity: clamp(e.intensity),
+   320→      confidence: clamp(e.confidence),
+   321→    })),
+   322→    symbols: safe.symbols.map((s) => ({
+   323→      label: String(s.label).slice(0, 60).toLowerCase(),
+   324→      note: s.note ? String(s.note).slice(0, 200) : undefined,
+   325→      confidence: clamp(s.confidence),
+   326→    })),
+   327→    motifs: safe.motifs.map((s) => ({
+   328→      label: String(s.label).slice(0, 60).toLowerCase(),
+   329→      note: s.note ? String(s.note).slice(0, 200) : undefined,
+   330→      confidence: clamp(s.confidence),
+   331→    })),
+   332→    people: safe.people.map((p) => ({
+   333→      name: String(p.name).slice(0, 60),
+   334→      role: p.role ? String(p.role).slice(0, 60) : undefined,
+   335→      note: p.note ? String(p.note).slice(0, 200) : undefined,
+   336→      confidence: clamp(p.confidence),
+   337→    })),
+   338→    locations: safe.locations.map((s) => ({
+   339→      label: String(s.label).slice(0, 60).toLowerCase(),
+   340→      note: s.note ? String(s.note).slice(0, 200) : undefined,
+   341→      confidence: clamp(s.confidence),
+   342→    })),
+   343→    actions: safe.actions.map((s) => ({
+   344→      label: String(s.label).slice(0, 60).toLowerCase(),
+   345→      note: s.note ? String(s.note).slice(0, 200) : undefined,
+   346→      confidence: clamp(s.confidence),
+   347→    })),
+   348→    lucidity: clamp(safe.lucidity),
+   349→    lucidityNote: safe.lucidityNote ? String(safe.lucidityNote).slice(0, 300) : undefined,
+   350→    fear: clamp(safe.fear),
+   351→    uncertainty: clamp(safe.uncertainty),
+   352→    interpretations: safe.interpretations.map((i) => ({
+   353→      text: String(i.text).slice(0, 400),
+   354→      confidence: clamp(i.confidence),
+   355→    })),
+   356→    relationships: safe.relationships.map((r) => ({
+   357→      from: String(r.from).slice(0, 60),
+   358→      to: String(r.to).slice(0, 60),
+   359→      relation: String(r.relation).slice(0, 60),
+   360→    })),
+   361→    historicalConnections: [], // computed app-side (authoritative), not from model
+   362→    mood: safe.mood,
+   363→  };
+   364→
+   365→  return { data, raw };
+   366→}
+   367→
+   368→// ---------- Arcade ----------
+   369→
+   370→const turnSchema = z.object({
+   371→  sceneText: z.string(),
+   372→  choices: z
+   373→    .array(
+   374→      z.object({
+   375→        id: z.string(),
+   376→        label: z.string().max(120),
+   377→        hint: z.string().optional(),
+   378→      })
+   379→    )
+   380→    .max(5)
+   381→    .default([]),
+   382→  proposedDelta: z
+   383→    .object({
+   384→      fear: z.number().optional(),
+   385→      lucidity: z.number().optional(),
+   386→      stability: z.number().optional(),
+   387→      agency: z.number().optional(),
+   388→      discoveredMotifs: z.array(z.string()).max(8).optional(),
+   389→      visitedScene: z.string().optional(),
+   390→      inventoryAdd: z.array(z.string()).max(5).optional(),
+   391→      phase: z.enum(["opening", "developing", "climax", "resolving"]).optional(),
+   392→      ending: z
+   393→        .enum(["collapse", "escape", "control", "unresolved", "transformed"])
+   394→        .nullable()
+   395→        .optional(),
+   396→      reasoning: z.string().optional(),
+   397→    })
+   398→    .default({}),
+   399→});
+   400→
+   401→export async function generateArcadeTurn(opts: {
+   402→  mode: ArcadeMode;
+   403→  dream: { rawText: string; analysis: any };
+   404→  state: SimulationState;
+   405→  history: { userAction: string; sceneText: string }[];
+   406→  userAction: string;
+   407→  dreamMotifs: string[];
+   408→}): Promise<{ response: ArcadeTurnResponse; raw: string }> {
+   409→  const prompt = ARCADE_SYSTEM_PROMPT(opts);
+   410→  const client = await zai();
+   411→  const completion = await client.chat.completions.create({
+   412→    messages: [
+   413→      { role: "assistant", content: prompt.system },
+   414→      { role: "user", content: prompt.user },
+   415→    ],
+   416→    thinking: { type: "disabled" },
+   417→  });
+   418→  let raw = completion.choices?.[0]?.message?.content ?? "";
+   419→
+   420→  let parsed = extractJSON(raw);
+   421→  if (!parsed) {
+   422→    // One repair attempt: show the model its invalid output, ask for strict JSON.
+   423→    // Without this a single malformed response burns a turn of the simulation.
+   424→    console.warn("[ai] arcade turn response was not parseable JSON — retrying once. head:", brief(raw));
+   425→    try {
+   426→      const retry = await client.chat.completions.create({
+   427→        messages: [
+   428→          { role: "assistant", content: prompt.system },
+   429→          { role: "user", content: prompt.user },
+   430→          { role: "assistant", content: raw.slice(0, 6000) },
+   431→          {
+   432→            role: "user",
+   433→            content:
+   434→              "Your previous response was not valid JSON. Return ONLY the JSON object matching the schema — no prose, no code fences. Keep sceneText vivid but finish the object.",
+   435→          },
+   436→        ],
+   437→        thinking: { type: "disabled" },
+   438→      });
+   439→      raw = retry.choices?.[0]?.message?.content ?? "";
+   440→      parsed = extractJSON(raw);
+   441→    } catch (e) {
+   442→      console.warn("[ai] arcade turn repair attempt failed:", e);
+   443→    }
+   444→  }
+   445→  if (!parsed) {
+   446→    console.warn("[ai] arcade turn fallback engaged. head:", brief(raw));
+   447→    // graceful fallback: a minimal, neutral turn so the session never hard-crashes
+   448→    const fallback: ArcadeTurnResponse = {
+   449→      sceneText:
+   450→        "The dream stutters for a moment — the scene is still forming. Try describing what you do next.",
+   451→      choices: [
+   452→        { id: "continue", label: "Press onward into the dream", hint: "Move deeper" },
+   453→        { id: "observe", label: "Pause and observe your surroundings" },
+   454→      ],
+   455→      proposedDelta: { reasoning: "Model response was malformed; no state change applied." },
+   456→      discoveredMotifs: [],
+   457→    };
+   458→    return { response: fallback, raw };
+   459→  }
+   460→
+   461→  const safe = turnSchema.parse(parsed);
+   462→
+   463→  const response: ArcadeTurnResponse = {
+   464→    sceneText: String(safe.sceneText).slice(0, 2000),
+   465→    choices: safe.choices.map((c, i) => ({
+   466→      id: c.id || `choice-${i + 1}`,
+   467→      label: String(c.label).slice(0, 120),
+   468→      hint: c.hint ? String(c.hint).slice(0, 200) : undefined,
+   469→    })),
+   470→    proposedDelta: clampDelta(safe.proposedDelta),
+   471→    discoveredMotifs: (safe.proposedDelta.discoveredMotifs || [])
+   472→      .map((s) => String(s).slice(0, 60).toLowerCase())
+   473→      .slice(0, 8),
+   474→  };
+   475→
+   476→  return { response, raw };
+   477→}
+   478→
+   479→function clampDelta(d: any): ProposedDelta {
+   480→  const out: ProposedDelta = {};
+   481→  if (typeof d.fear === "number") out.fear = clamp(d.fear, 0, 100);
+   482→  if (typeof d.lucidity === "number") out.lucidity = clamp(d.lucidity, 0, 100);
+   483→  if (typeof d.stability === "number") out.stability = clamp(d.stability, 0, 100);
+   484→  if (typeof d.agency === "number") out.agency = clamp(d.agency, 0, 100);
+   485→  if (Array.isArray(d.discoveredMotifs))
+   486→    out.discoveredMotifs = d.discoveredMotifs.map((s: any) => String(s).slice(0, 60).toLowerCase()).slice(0, 8);
+   487→  if (typeof d.visitedScene === "string") out.visitedScene = String(d.visitedScene).slice(0, 80);
+   488→  if (Array.isArray(d.inventoryAdd))
+   489→    out.inventoryAdd = d.inventoryAdd.map((s: any) => String(s).slice(0, 60)).slice(0, 5);
+   490→  if (
+   491→    d.phase === "opening" ||
+   492→    d.phase === "developing" ||
+   493→    d.phase === "climax" ||
+   494→    d.phase === "resolving"
+   495→  )
+   496→    out.phase = d.phase;
+   497→  if (
+   498→    d.ending === "collapse" ||
+   499→    d.ending === "escape" ||
+   500→    d.ending === "control" ||
+   501→    d.ending === "unresolved" ||
+   502→    d.ending === "transformed"
+   503→  )
+   504→    out.ending = d.ending;
+   505→  if (typeof d.reasoning === "string") out.reasoning = String(d.reasoning).slice(0, 400);
+   506→  return out;
+   507→}
+   508→
+   509→// ---------- Streaming arcade turn (r6) ----------
+   510→//
+   511→// Streams the model's sceneText to the client as it is produced. The SDK
+   512→// returns the raw fetch Response.body (a ReadableStream) when stream:true
+   513→// is requested AND the server responds with text/event-stream; otherwise it
+   514→// returns the parsed JSON (we fall back to a single delta emit).
+   515→//
+   516→// The model emits the response as a JSON object whose first field is
+   517→// `sceneText`. As chunks arrive we incrementally extract the partial
+   518→// sceneText from the partial JSON buffer (handling escapes) and emit each
+   519→// newly-completed slice via onDelta. The complete JSON is parsed at end
+   520→// and the structured response returned, exactly like generateArcadeTurn.
+   521→
+   522→function buildArcadeResponse(safe: z.infer<typeof turnSchema>): ArcadeTurnResponse {
+   523→  return {
+   524→    sceneText: String(safe.sceneText).slice(0, 2000),
+   525→    choices: safe.choices.map((c, i) => ({
+   526→      id: c.id || `choice-${i + 1}`,
+   527→      label: String(c.label).slice(0, 120),
+   528→      hint: c.hint ? String(c.hint).slice(0, 200) : undefined,
+   529→    })),
+   530→    proposedDelta: clampDelta(safe.proposedDelta),
+   531→    discoveredMotifs: (safe.proposedDelta.discoveredMotifs || [])
+   532→      .map((s) => String(s).slice(0, 60).toLowerCase())
+   533→      .slice(0, 8),
+   534→  };
+   535→}
+   536→
+   537→// Extract the partial sceneText value from a partial JSON buffer.
+   538→// Returns { text, complete } where complete=true if the closing quote was seen.
+   539→function extractPartialSceneText(buffer: string): { text: string; complete: boolean } {
+   540→  const key = `"sceneText"`;
+   541→  const idx = buffer.indexOf(key);
+   542→  if (idx === -1) return { text: "", complete: false };
+   543→
+   544→  // skip whitespace
+   545→  let i = idx + key.length;
+   546→  while (i < buffer.length && /\s/.test(buffer[i])) i++;
+   547→  if (i >= buffer.length || buffer[i] !== ":") return { text: "", complete: false };
+   548→  i++;
+   549→  while (i < buffer.length && /\s/.test(buffer[i])) i++;
+   550→  if (i >= buffer.length) return { text: "", complete: false };
+   551→  if (buffer[i] !== '"') return { text: "", complete: false };
+   552→
+   553→  // string content
+   554→  i++;
+   555→  let out = "";
+   556→  let complete = false;
+   557→  while (i < buffer.length) {
+   558→    const ch = buffer[i];
+   559→    if (ch === "\\") {
+   560→      if (i + 1 >= buffer.length) break;
+   561→      const next = buffer[i + 1];
+   562→      if (next === "n") out += "\n";
+   563→      else if (next === "t") out += "\t";
+   564→      else if (next === "r") out += "\r";
+   565→      else if (next === '"') out += '"';
+   566→      else if (next === "\\") out += "\\";
+   567→      else if (next === "/") out += "/";
+   568→      else if (next === "b") out += "\b";
+   569→      else if (next === "f") out += "\f";
+   570→      else if (next === "u") {
+   571→        if (i + 5 >= buffer.length) break;
+   572→        const hex = buffer.slice(i + 2, i + 6);
+   573→        try {
+   574→          out += String.fromCharCode(parseInt(hex, 16));
+   575→          i += 4;
+   576→        } catch {
+   577→          out += next;
+   578→        }
+   579→      } else {
+   580→        out += next;
+   581→      }
+   582→      i += 2;
+   583→    } else if (ch === '"') {
+   584→      complete = true;
+   585→      break;
+   586→    } else {
+   587→      out += ch;
+   588→      i++;
+   589→    }
+   590→  }
+   591→  return { text: out, complete };
+   592→}
+   593→
+   594→// Parse an SSE stream (text/event-stream) and yield content deltas.
+   595→// Tolerates \n\n and \r\n\r\n separators; ignores keep-alive lines.
+   596→async function* parseSSEStream(
+   597→  stream: ReadableStream<Uint8Array> | NodeJS.ReadableStream | any
+   598→): AsyncGenerator<string> {
+   599→  const reader = (stream as any).getReader?.();
+   600→  if (!reader) {
+   601→    // Node stream fallback
+   602→    const iter = (stream as any)[Symbol.asyncIterator]?.();
+   603→    if (iter) {
+   604→      const decoder = new TextDecoder();
+   605→      let buffer = "";
+   606→      while (true) {
+   607→        const { value, done } = await iter.next();
+   608→        if (done) break;
+   609→        buffer += decoder.decode(value, { stream: true });
+   610→        let idx;
+   611→        while ((idx = buffer.indexOf("\n\n")) !== -1) {
+   612→          const chunk = buffer.slice(0, idx);
+   613→          buffer = buffer.slice(idx + 2);
+   614→          for (const line of chunk.split("\n")) {
+   615→            const m = line.match(/^data:\s?(.*)$/);
+   616→            if (!m) continue;
+   617→            const data = m[1];
+   618→            if (data === "[DONE]") return;
+   619→            try {
+   620→              const json = JSON.parse(data);
+   621→              const delta = json?.choices?.[0]?.delta?.content;
+   622→              if (typeof delta === "string" && delta) yield delta;
+   623→            } catch {
+   624→              // skip malformed
+   625→            }
+   626→          }
+   627→        }
+   628→      }
+   629→    }
+   630→    return;
+   631→  }
+   632→  const decoder = new TextDecoder();
+   633→  let buffer = "";
+   634→  while (true) {
+   635→    const { value, done } = await reader.read();
+   636→    if (done) break;
+   637→    buffer += decoder.decode(value, { stream: true });
+   638→    let idx;
+   639→    while ((idx = buffer.indexOf("\n\n")) !== -1) {
+   640→      const chunk = buffer.slice(0, idx);
+   641→      buffer = buffer.slice(idx + 2);
+   642→      for (const line of chunk.split("\n")) {
+   643→        const m = line.match(/^data:\s?(.*)$/);
+   644→        if (!m) continue;
+   645→        const data = m[1];
+   646→        if (data === "[DONE]") return;
+   647→        try {
+   648→          const json = JSON.parse(data);
+   649→          const delta = json?.choices?.[0]?.delta?.content;
+   650→          if (typeof delta === "string" && delta) yield delta;
+   651→        } catch {
+   652→          // skip malformed
+   653→        }
+   654→      }
+   655→    }
+   656→  }
+   657→}
+   658→
+   659→export async function generateArcadeTurnStreaming(
+   660→  opts: {
+   661→    mode: ArcadeMode;
+   662→    dream: { rawText: string; analysis: any };
+   663→    state: SimulationState;
+   664→    history: { userAction: string; sceneText: string }[];
+   665→    userAction: string;
+   666→    dreamMotifs: string[];
+   667→  },
+   668→  onDelta: (delta: string) => void
+   669→): Promise<{ response: ArcadeTurnResponse; raw: string }> {
+   670→  const prompt = ARCADE_SYSTEM_PROMPT(opts);
+   671→  const client = await zai();
+   672→
+   673→  let raw = "";
+   674→  try {
+   675→    const completion = await client.chat.completions.create({
+   676→      messages: [
+   677→        { role: "assistant", content: prompt.system },
+   678→        { role: "user", content: prompt.user },
+   679→      ],
+   680→      stream: true,
+   681→      thinking: { type: "disabled" },
+   682→    });
+   683→
+   684→    // The SDK returns response.body (ReadableStream) when stream:true and
+   685→    // text/event-stream; otherwise returns parsed JSON.
+   686→    const stream =
+   687→      completion && (completion.body instanceof ReadableStream
+   688→        ? completion.body
+   689→        : completion instanceof ReadableStream
+   690→        ? completion
+   691→        : null);
+   692→
+   693→    if (stream) {
+   694→      let sentText = "";
+   695→      for await (const delta of parseSSEStream(stream)) {
+   696→        raw += delta;
+   697→        const { text } = extractPartialSceneText(raw);
+   698→        if (text.length > sentText.length) {
+   699→          // emit only the newly completed slice
+   700→          onDelta(text.slice(sentText.length));
+   701→          sentText = text;
+   702→        }
+   703→      }
+   704→    } else {
+   705→      // non-streaming fallback (server didn't honour stream:true)
+   706→      raw = completion?.choices?.[0]?.message?.content ?? "";
+   707→      const { text } = extractPartialSceneText(raw);
+   708→      if (text) onDelta(text);
+   709→    }
+   710→  } catch (e) {
+   711→    console.warn("[ai] arcade streaming turn failed:", e);
+   712→    throw e;
+   713→  }
+   714→
+   715→  let parsed = extractJSON(raw);
+   716→  if (!parsed) {
+   717→    // One repair attempt with non-streaming
+   718→    console.warn("[ai] streaming arcade turn JSON unparseable — retrying once. head:", brief(raw));
+   719→    try {
+   720→      const retry = await client.chat.completions.create({
+   721→        messages: [
+   722→          { role: "assistant", content: prompt.system },
+   723→          { role: "user", content: prompt.user },
+   724→          { role: "assistant", content: raw.slice(0, 6000) },
+   725→          {
+   726→            role: "user",
+   727→            content:
+   728→              "Your previous response was not valid JSON. Return ONLY the JSON object matching the schema — no prose, no code fences. Keep sceneText vivid but finish the object.",
+   729→          },
+   730→        ],
+   731→        thinking: { type: "disabled" },
+   732→      });
+   733→      raw = retry?.choices?.[0]?.message?.content ?? "";
+   734→      parsed = extractJSON(raw);
+   735→      if (parsed) {
+   736→        // emit the repaired sceneText in one chunk so the client catches up
+   737→        const { text } = extractPartialSceneText(raw);
+   738→        if (text) onDelta(text);
+   739→      }
+   740→    } catch (e) {
+   741→      console.warn("[ai] streaming arcade turn repair attempt failed:", e);
+   742→    }
+   743→  }
+   744→  if (!parsed) {
+   745→    console.warn("[ai] streaming arcade turn fallback engaged. head:", brief(raw));
+   746→    const fallback: ArcadeTurnResponse = {
+   747→      sceneText:
+   748→        "The dream stutters for a moment — the scene is still forming. Try describing what you do next.",
+   749→      choices: [
+   750→        { id: "continue", label: "Press onward into the dream", hint: "Move deeper" },
+   751→        { id: "observe", label: "Pause and observe your surroundings" },
+   752→      ],
+   753→      proposedDelta: { reasoning: "Model response was malformed; no state change applied." },
+   754→      discoveredMotifs: [],
+   755→    };
+   756→    onDelta(fallback.sceneText);
+   757→    return { response: fallback, raw };
+   758→  }
+   759→
+   760→  const safe = turnSchema.parse(parsed);
+   761→  const response = buildArcadeResponse(safe);
+   762→  return { response, raw };
+   763→}
+   764→

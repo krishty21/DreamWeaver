@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { analyzeDream } from "@/lib/ai";
+import { reconcileUserGraph } from "@/lib/memory-graph";
 import type { DreamAnalysisData } from "@/lib/types";
 
 // POST — re-run the Gemini reflection for an existing dream.
@@ -85,6 +86,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       interpretationsJson: JSON.stringify(analysisData.interpretations),
       relationshipsJson: JSON.stringify(analysisData.relationships),
       historicalConnectionsJson: JSON.stringify(historicalConnections),
+      // r12 — Dream Laws + Evidence persisted on re-analyze too.
+      dreamLawsJson: JSON.stringify(analysisData.dreamLaws ?? []),
+      evidenceJson: JSON.stringify(
+        (analysisData.interpretations ?? []).map((i) => ({
+          interpretation: i.text,
+          evidence: i.evidence ?? [],
+        }))
+      ),
       modelRawJson: modelRaw.slice(0, 20000),
     },
   });
@@ -131,6 +140,14 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
     where: { id: dream.id },
     data: { title: analysisData.title, mood: analysisData.mood },
   });
+
+  // r12 — re-reconcile the memory graph so canonical Entities reflect the
+  // refreshed motifs (old mentions pruned, new ones clustered).
+  try {
+    await reconcileUserGraph(userId);
+  } catch (e) {
+    console.warn("[reanalyze] memory-graph reconcile failed (non-fatal):", e instanceof Error ? e.message : e);
+  }
 
   const refreshed = await db.dream.findUnique({
     where: { id: dream.id },

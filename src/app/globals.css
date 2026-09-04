@@ -1375,3 +1375,177 @@ svg .spark-line-shadow {
 .dw-r11-css-live::after {
   content: "r11";
 }
+
+/* ============================================================
+   r12 — DREAM MEMORY GRAPH (Threads view) + Memory Echo + Dream DNA
+   ============================================================ */
+
+/* Thread card — the canonical-entity surface. Lifts on hover. */
+.thread-card {
+  transition: transform 0.32s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.32s ease, border-color 0.32s ease;
+}
+.thread-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 18px 44px -28px rgba(65, 63, 61, 0.32);
+  border-color: color-mix(in srgb, var(--mauve, #b1a6a4) 42%, transparent);
+}
+
+/* First-appearance chip — compact, click-through to the dream. */
+.thread-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.7rem;
+  border-radius: 9999px;
+  font-size: 0.78rem;
+  line-height: 1;
+  color: var(--ink, #413f3d);
+  background: color-mix(in srgb, var(--paper, #f2f1ef) 80%, var(--mauve, #b1a6a4));
+  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 28%, transparent);
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.thread-chip:hover {
+  background: color-mix(in srgb, var(--paper, #f2f1ef) 65%, var(--mauve, #b1a6a4));
+  transform: translateY(-1px);
+}
+.thread-chip:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+
+/* Evolution role chips — the chronological sequence of how this motif appeared. */
+.thread-role-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.18rem 0.6rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-family: var(--font-data, monospace);
+  letter-spacing: 0.02em;
+  color: var(--ink, #413f3d);
+  background: color-mix(in srgb, var(--mauve, #b1a6a4) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 26%, transparent);
+}
+
+/* Per-mention row in the chronological list. */
+.thread-mention-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+.thread-mention-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 9999px;
+  margin-top: 0.45rem;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--paper, #f2f1ef) 60%, transparent);
+}
+.thread-role-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.45rem;
+  border-radius: 9999px;
+  font-size: 0.62rem;
+  font-family: var(--font-data, monospace);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--ink, #413f3d) 70%, transparent);
+  background: color-mix(in srgb, var(--mauve, #b1a6a4) 10%, transparent);
+}
+
+/* Associated-entity chip (co-occurrence neighbourhood). */
+.thread-assoc-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.22rem 0.55rem;
+  border-radius: 9999px;
+  font-size: 0.72rem;
+  color: color-mix(in srgb, var(--ink, #413f3d) 85%, transparent);
+  background: color-mix(in srgb, var(--paper, #f2f1ef) 50%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 22%, transparent);
+}
+
+/* "Open the latest" affordance. */
+.thread-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  font-family: var(--font-data, monospace);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--ink, #413f3d);
+  padding: 0.3rem 0.55rem;
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+.thread-cta:hover {
+  background: color-mix(in srgb, var(--mauve, #b1a6a4) 18%, transparent);
+}
+
+/* The fear-arc sparkline — dream telemetry, restrained. */
+.thread-sparkline {
+  height: 28px;
+  display: block;
+  opacity: 0.9;
+}
+
+/* ---- MEMORY ECHO (Arcade) ---- */
+/* A subtle, restrained aside shown inside the Arcade when a turn references
+   a motif that also appears in a prior dream. Never interrupts gameplay;
+   appears below the scene as a quiet margin-note. */
+.memory-echo {
+  position: relative;
+  margin-top: 1rem;
+  padding: 0.85rem 1rem 0.85rem 2rem;
+  border-radius: 0.5rem;
+  background: color-mix(in srgb, var(--mauve, #b1a6a4) 10%, var(--paper, #f2f1ef));
+  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 26%, transparent);
+  font-size: 0.82rem;
+  color: color-mix(in srgb, var(--ink, #413f3d) 82%, transparent);
+  line-height: 1.5;
+}
+.memory-echo::before {
+  content: "";
+  position: absolute;
+  left: 0.85rem;
+  top: 0.85rem;
+  bottom: 0.85rem;
+  width: 2px;
+  background: linear-gradient(180deg, var(--rose, #d8cfd0), color-mix(in srgb, var(--mauve, #b1a6a4) 60%, transparent));
+  border-radius: 9999px;
+}
+.memory-echo-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-family: var(--font-data, monospace);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--mauve, #b1a6a4) 90%, var(--ink, #413f3d));
+  margin-bottom: 0.25rem;
+}
+
+/* ---- DREAM DNA (compact visual signature per dream) ---- */
+/* A small SVG glyph encoding the dream's emotional signature + dominant
+   motifs + mood. Lightweight, reliable, no external assets. */
+.dream-dna {
+  display: inline-block;
+  vertical-align: middle;
+}
+.dream-dna-frame {
+  background: color-mix(in srgb, var(--paper, #f2f1ef) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--mauve, #b1a6a4) 22%, transparent);
+  border-radius: 0.5rem;
+  padding: 0.65rem;
+}
+.dream-dna:hover {
+  transform: translateY(-1px);
+  transition: transform 0.2s ease;
+}
+
+/* r12 marker rule — Turbopack CSS staleness guard. */
+.dw-r12-css-live::after {
+  content: "r12";
+}

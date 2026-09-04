@@ -220,8 +220,25 @@ const analysisSchema = z.object({
   fear: z.number().default(0.2),
   uncertainty: z.number().default(0.3),
   interpretations: z
-    .array(z.object({ text: z.string(), confidence: z.number() }))
+    .array(
+      z.object({
+        text: z.string(),
+        confidence: z.number(),
+        evidence: z.array(z.string().max(200)).max(4).optional(),
+      })
+    )
     .max(5)
+    .default([]),
+  // r12 — DREAM LAWS: recurring internal rules of the dream itself. Advisory;
+  // the Arcade uses them for internal consistency, never as authoritative state.
+  dreamLaws: z
+    .array(
+      z.object({
+        law: z.string().max(160),
+        evidence: z.string().max(200).optional(),
+      })
+    )
+    .max(3)
     .default([]),
   relationships: z
     .array(z.object({ from: z.string(), to: z.string(), relation: z.string() }))
@@ -301,6 +318,7 @@ export async function analyzeDream(
           confidence: 0.1,
         },
       ],
+      dreamLaws: [],
       relationships: [],
       historicalConnections: [],
       mood: "neutral",
@@ -352,6 +370,13 @@ export async function analyzeDream(
     interpretations: safe.interpretations.map((i) => ({
       text: String(i.text).slice(0, 400),
       confidence: clamp(i.confidence),
+      evidence: Array.isArray(i.evidence)
+        ? i.evidence.map((e) => String(e).slice(0, 200)).slice(0, 4)
+        : undefined,
+    })),
+    dreamLaws: safe.dreamLaws.map((l) => ({
+      law: String(l.law).slice(0, 160),
+      evidence: l.evidence ? String(l.evidence).slice(0, 200) : undefined,
     })),
     relationships: safe.relationships.map((r) => ({
       from: String(r.from).slice(0, 60),
@@ -405,6 +430,13 @@ export async function generateArcadeTurn(opts: {
   history: { userAction: string; sceneText: string }[];
   userAction: string;
   dreamMotifs: string[];
+  // r12 — Dream Laws: recurring internal rules of the source dream, passed
+  // to the model for internal consistency (advisory; never authoritative).
+  dreamLaws?: { law: string; evidence?: string }[];
+  // r12 — Historical connections: motifs in this dream that also appear in
+  // prior dreams. The model may naturally reference them; the app decides
+  // whether to surface a MEMORY ECHO notice (never the model).
+  historicalConnections?: { motif: string; priorDreamCount: number }[];
 }): Promise<{ response: ArcadeTurnResponse; raw: string }> {
   const prompt = ARCADE_SYSTEM_PROMPT(opts);
   const client = await zai();
@@ -664,6 +696,8 @@ export async function generateArcadeTurnStreaming(
     history: { userAction: string; sceneText: string }[];
     userAction: string;
     dreamMotifs: string[];
+    dreamLaws?: { law: string; evidence?: string }[];
+    historicalConnections?: { motif: string; priorDreamCount: number }[];
   },
   onDelta: (delta: string) => void
 ): Promise<{ response: ArcadeTurnResponse; raw: string }> {
