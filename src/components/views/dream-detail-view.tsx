@@ -12,10 +12,16 @@ import {
   Eye,
   Brain,
   Sparkles,
+  RefreshCw,
+  User,
+  MapPin,
+  Footprints,
+  Link2,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import type {
   DreamAnalysisData,
   Emotion,
@@ -36,6 +42,7 @@ export function DreamDetailView() {
   const navigate = useApp((s) => s.navigate);
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [reflecting, setReflecting] = useState(false);
 
   const { data, isLoading } = useQuery({
     queryKey: ["dream", dreamId],
@@ -53,6 +60,31 @@ export function DreamDetailView() {
 
   const dream = data.dream;
   const a = dream.analysis ? (parseAnalysis(dream.analysis) as DreamAnalysisData) : null;
+
+  // Re-run the Gemini reflection. The raw dream is never modified — only the
+  // derived analysis is replaced.
+  async function onReflect() {
+    if (!dream || reflecting) return;
+    setReflecting(true);
+    try {
+      const res = await fetch(`/api/dreams/${dream.id}/reanalyze`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "The reflection could not be produced.");
+      }
+      qc.invalidateQueries({ queryKey: ["dream", dream.id] });
+      qc.invalidateQueries({ queryKey: ["dreams"] });
+      qc.invalidateQueries({ queryKey: ["patterns"] });
+      toast({
+        title: "Dream re-read",
+        description: "A fresh reflection has been woven. Your original memory is unchanged.",
+      });
+    } catch (e: any) {
+      toast({ title: "Re-reflection failed", description: e.message, variant: "destructive" });
+    } finally {
+      setReflecting(false);
+    }
+  }
 
   async function onDelete() {
     if (!dream) return;
@@ -88,6 +120,22 @@ export function DreamDetailView() {
           >
             <Compass className="h-4 w-4" strokeWidth={1.6} />
             Re-enter dream
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onReflect}
+            disabled={reflecting}
+            className="h-9"
+          >
+            {reflecting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" strokeWidth={1.6} />
+            )}
+            <span className="sr-only sm:not-sr-only sm:ml-1.5">
+              {reflecting ? "Reading…" : a ? "Re-reflect" : "Add reflection"}
+            </span>
           </Button>
           <Button
             variant="ghost"
@@ -154,16 +202,37 @@ export function DreamDetailView() {
 
           {/* Grid: motifs / symbols / people / places / actions */}
           <div className="mt-12 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-10">
-            <ItemGroup title="Symbolic motifs" items={a.motifs} />
-            <ItemGroup title="Symbols" items={a.symbols} />
-            <ItemGroup title="People & entities" items={a.people.map((p) => ({ label: p.name, note: p.role ? `${p.role}` : p.note }))} />
-            <ItemGroup title="Locations" items={a.locations} />
-            <ItemGroup title="Actions" items={a.actions} />
+            <ItemGroup title="Symbolic motifs" items={a.motifs} type="symbol" />
+            <ItemGroup title="Symbols" items={a.symbols} type="symbol" />
+            <ItemGroup title="People & entities" items={a.people.map((p) => ({ label: p.name, note: p.role ? `${p.role}` : p.note, confidence: p.confidence }))} type="person" />
+            <ItemGroup title="Locations" items={a.locations} type="place" />
+            <ItemGroup title="Actions" items={a.actions} type="action" />
           </div>
+
+          {/* Relationships within the dream */}
+          {a.relationships.length > 0 && (
+            <section className="mt-12">
+              <SectionLabel icon={Link2} tag="04 · Within this dream" label="Relationships" />
+              <div className="mt-4 flex flex-wrap gap-2.5">
+                {a.relationships.map((r, i) => (
+                  <span
+                    key={i}
+                    className="surface-quiet px-3.5 py-2 inline-flex items-center gap-2 text-sm"
+                  >
+                    <span className="text-foreground">{r.from}</span>
+                    <span className="text-[10px] tracking-caps uppercase text-muted-foreground border-b border-border pb-0.5">
+                      {r.relation}
+                    </span>
+                    <span className="text-foreground">{r.to}</span>
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* Lucidity / fear / uncertainty meters */}
           <section className="mt-12">
-            <SectionLabel icon={Brain} tag="04 · Dream lucidity & emotional tone" label="Estimate" />
+            <SectionLabel icon={Brain} tag="05 · Dream lucidity & emotional tone" label="Estimate" />
             <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 gap-5">
               <Meter label="Lucidity" value={a.lucidity * 100} hint={a.lucidityNote} tone="lucid" />
               <Meter label="Fear / tension" value={a.fear * 100} tone="tense" />
@@ -177,7 +246,7 @@ export function DreamDetailView() {
           {/* Historical connections */}
           {a.historicalConnections.length > 0 && (
             <section className="mt-12">
-              <SectionLabel icon={Brain} tag="05 · Recurring in your history" label="Observed pattern" />
+              <SectionLabel icon={Brain} tag="06 · Recurring in your history" label="Observed pattern" />
               <div className="mt-4 space-y-3">
                 {a.historicalConnections.map((c, i) => (
                   <div key={i} className="surface-quiet p-4 flex items-start justify-between gap-3">
@@ -198,7 +267,7 @@ export function DreamDetailView() {
           {/* Interpretations */}
           {a.interpretations.length > 0 && (
             <section className="mt-12">
-              <SectionLabel icon={Sparkles} tag="06 · Possible interpretation" label="AI-generated reflection" />
+              <SectionLabel icon={Sparkles} tag="07 · Possible interpretation" label="AI-generated reflection" />
               <div className="mt-4 space-y-3">
                 {a.interpretations.map((it, i) => (
                   <InterpretationCard key={i} interp={it} />
@@ -278,10 +347,22 @@ function EmotionBar({ emotion }: { emotion: Emotion }) {
   );
 }
 
-function ItemGroup({ title, items }: { title: string; items: LabeledItem[] }) {
+function ItemGroup({
+  title,
+  items,
+  type = "symbol",
+}: {
+  title: string;
+  items: LabeledItem[];
+  type?: "symbol" | "person" | "place" | "action";
+}) {
+  const Icon = type === "person" ? User : type === "place" ? MapPin : type === "action" ? Footprints : Sparkles;
   return (
     <div>
-      <h3 className="text-xs tracking-caps uppercase text-muted-foreground mb-2">{title}</h3>
+      <h3 className="text-xs tracking-caps uppercase text-muted-foreground mb-2 flex items-center gap-1.5">
+        <Icon className="h-3 w-3" strokeWidth={1.6} />
+        {title}
+      </h3>
       {items.length === 0 ? (
         <p className="text-sm text-muted-foreground italic">—</p>
       ) : (
@@ -291,7 +372,7 @@ function ItemGroup({ title, items }: { title: string; items: LabeledItem[] }) {
               {it.label}
               {it.note && <span className="text-muted-foreground">· {it.note}</span>}
               {it.confidence !== undefined && (
-                <span className="text-muted-foreground/70 font-data text-[10px]">
+                <span className="text-muted-foreground/70 font-data text-[10px]" title={`AI confidence ${(it.confidence * 100).toFixed(0)}%`}>
                   {it.confidence < 0.4 ? "?" : it.confidence > 0.7 ? "●" : "◐"}
                 </span>
               )}

@@ -99,7 +99,7 @@ function DreamCard({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: Math.min(index * 0.04, 0.4) }}
-      className="surface p-5 flex flex-col cursor-pointer hover:translate-y-[-2px] transition-transform"
+      className="surface p-5 flex flex-col cursor-pointer lift"
       onClick={onOpen}
     >
       <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">

@@ -143,9 +143,16 @@ export function Footer() {
           <span className="font-display text-base text-foreground">DreamWeaver</span>
           <span className="hidden sm:inline">— your dreams, kept.</span>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
+          <span className="hidden md:inline-flex items-center gap-1.5" aria-hidden="true">
+            <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70">C</kbd>
+            capture
+            <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70 ml-1.5">J</kbd>
+            journal
+            <kbd className="font-data text-[10px] px-1.5 py-0.5 rounded border border-border bg-card/70 ml-1.5">A</kbd>
+            arcade
+          </span>
           <span>AI reflection is advisory, never clinical.</span>
-          <span className="hidden sm:inline">Built on Next.js · Gemini-style LLM · Prisma</span>
         </div>
       </div>
     </footer>

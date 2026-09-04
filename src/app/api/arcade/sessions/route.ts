@@ -8,6 +8,9 @@ import { z } from "zod";
 const createSchema = z.object({
   dreamId: z.string(),
   mode: z.enum(["replay", "rewrite", "confront"]).default("replay"),
+  // App-selected motif the Confront session will centre on (advisory to the model,
+  // selected from app-computed patterns — never chosen by the model itself).
+  confrontMotif: z.string().max(60).optional().nullable(),
 });
 
 // GET — list user's arcade sessions (with dream summary).
@@ -47,7 +50,11 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.issues[0]?.message ?? "invalid" }, { status: 400 });
   }
-  const { dreamId, mode } = parsed.data as { dreamId: string; mode: ArcadeMode };
+  const { dreamId, mode, confrontMotif } = parsed.data as {
+    dreamId: string;
+    mode: ArcadeMode;
+    confrontMotif?: string | null;
+  };
 
   // ownership check on the dream
   const dream = await db.dream.findFirst({
@@ -56,13 +63,19 @@ export async function POST(req: Request) {
   });
   if (!dream) return NextResponse.json({ error: "dream not found" }, { status: 404 });
 
+  const state = initialState();
+  if (mode === "confront" && confrontMotif) {
+    // The app pins the motif this session will centre on.
+    (state as any).confrontMotif = confrontMotif.toLowerCase();
+  }
+
   const session = await db.arcadeSession.create({
     data: {
       userId,
       dreamId,
       mode,
       status: "active",
-      stateJson: JSON.stringify(initialState()),
+      stateJson: JSON.stringify(state),
     },
   });
 

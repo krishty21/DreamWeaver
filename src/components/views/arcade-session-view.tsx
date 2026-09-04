@@ -128,14 +128,49 @@ export function ArcadeSessionView() {
           <Meter label="Stability" value={state.stability} tone="neutral" />
           <Meter label="Agency" value={state.agency} tone="lucid" />
         </div>
-        <div className="mt-3 flex items-center justify-between text-[11px] text-muted-foreground">
-          <span>Turn <span className="font-data">{state.turn}</span> · phase {state.phase}</span>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[11px] text-muted-foreground">
+          <span>
+            Turn <span className="font-data">{state.turn}</span> · phase {state.phase}
+            {state.confrontMotif && (
+              <>
+                {" · "}confronting <span className="capitalize text-foreground">{state.confrontMotif}</span>
+              </>
+            )}
+          </span>
           {discovered.length > 0 && (
             <span className="inline-flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3" /> discovered: {discovered.map((m) => m).join(", ")}
+              <Sparkles className="h-3 w-3" /> discovered: {discovered.join(", ")}
             </span>
           )}
         </div>
+        {/* inventory + visited scenes */}
+        {(state.inventory?.length > 0 || state.visitedScenes?.length > 0) && (
+          <div className="mt-3 pt-3 border-t border-border flex flex-col sm:flex-row gap-3 sm:gap-6 text-[11px]">
+            {state.inventory?.length > 0 && (
+              <div className="flex items-start gap-2">
+                <span className="tracking-caps uppercase text-muted-foreground shrink-0 mt-0.5">Carrying</span>
+                <span className="flex flex-wrap gap-1.5">
+                  {state.inventory.map((item, i) => (
+                    <span key={i} className="chip">{item}</span>
+                  ))}
+                </span>
+              </div>
+            )}
+            {state.visitedScenes?.length > 0 && (
+              <div className="flex items-start gap-2">
+                <span className="tracking-caps uppercase text-muted-foreground shrink-0 mt-0.5">Scenes</span>
+                <span className="flex flex-wrap gap-1.5">
+                  {state.visitedScenes.map((s, i) => (
+                    <span key={i} className="font-data text-[10px] text-muted-foreground">
+                      {s}
+                      {i < state.visitedScenes.length - 1 ? " ·" : ""}
+                    </span>
+                  ))}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* turns log */}

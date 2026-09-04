@@ -87,7 +87,11 @@ export function ARCADE_SYSTEM_PROMPT(opts: {
     rewrite:
       "REWRITE: Branch from the remembered scenario. Let the user explore alternative outcomes by making different choices. The original dream is the seed, not a fixed track.",
     confront:
-      "CONFRONT: The user directly engages a recurring or significant motif from their dream history. Make that motif a present, addressable entity in the scene. Allow real engagement, not avoidance.",
+      `CONFRONT: The user directly engages a recurring motif from their dream history. Make that motif a present, addressable entity in the scene. Allow real engagement, not avoidance.${
+        state.confrontMotif
+          ? ` The application has selected the motif "${state.confrontMotif}" (observed across multiple of the user's recorded dreams) — centre the confrontation on it. Interpret the user's intent toward it; let them speak to it, question it, embrace it, or defy it.`
+          : ""
+      }`,
   };
 
   const stateStr = `fear=${state.fear.toFixed(0)}/100, lucidity=${state.lucidity.toFixed(

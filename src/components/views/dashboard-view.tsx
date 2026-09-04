@@ -3,7 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useApp } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { Sparkles, Compass, Moon, Map, ArrowRight, Loader2, BookOpenText } from "lucide-react";
+import { Sparkles, Compass, Moon, MoonStar, Sunrise, Sun, Map, ArrowRight, Loader2, BookOpenText } from "lucide-react";
 import { motion } from "framer-motion";
 import { useMemo } from "react";
 
@@ -41,6 +41,15 @@ export function DashboardView() {
 
   const hour = new Date().getHours();
   const greeting = hour < 5 ? "Late tonight" : hour < 12 ? "This morning" : hour < 18 ? "This afternoon" : "Tonight";
+  const GreetIcon = hour < 5 ? MoonStar : hour < 12 ? Sunrise : hour < 18 ? Sun : Moon;
+  const greetingHint =
+    hour < 5
+      ? "The hour when dreams are closest."
+      : hour < 12
+      ? "If a dream is still with you, catch it now."
+      : hour < 18
+      ? "A quiet moment to look back."
+      : "The night ahead has room for dreams.";
 
   return (
     <div className="mx-auto max-w-6xl px-5 sm:px-8 py-10 sm:py-14">
@@ -52,8 +61,10 @@ export function DashboardView() {
         className="flex flex-col sm:flex-row sm:items-end justify-between gap-6"
       >
         <div>
-          <div className="text-xs tracking-caps uppercase text-muted-foreground mb-2">
+          <div className="text-xs tracking-caps uppercase text-muted-foreground mb-2 flex items-center gap-2">
+            <GreetIcon className="h-3.5 w-3.5" strokeWidth={1.6} aria-hidden="true" />
             {greeting}
+            <span className="hidden sm:inline font-normal normal-case tracking-normal text-muted-foreground/70">· {greetingHint}</span>
           </div>
           <h1 className="font-display tracking-display text-5xl sm:text-6xl leading-[0.95] balance">
             {me?.user?.name ? `Welcome back, ${me.user.name.split(" ")[0]}.` : "Your dream observatory."}
@@ -84,7 +95,7 @@ export function DashboardView() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5, delay: 0.05 }}
               onClick={() => navigate("dream", { dreamId: recent.id })}
-              className="surface p-6 lg:col-span-2 text-left flex flex-col hover:translate-y-[-2px] transition-transform"
+              className="surface p-6 lg:col-span-2 text-left flex flex-col lift"
             >
               <div className="flex items-center justify-between text-xs text-muted-foreground mb-3">
                 <span className="tracking-caps uppercase">Most recent dream</span>

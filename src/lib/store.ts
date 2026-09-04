@@ -33,14 +33,19 @@ function parseHash(): { view: View; activeDreamId: string | null; activeSessionI
   if (!valid.includes(view) || !view) return { view: "landing", activeDreamId: null, activeSessionId: null };
   let dreamId: string | null = null;
   let sessionId: string | null = null;
+  // #/dream/<id> — dream detail
+  // #/session/<id> — arcade session
+  // #/arcade/<id> — arcade with a pre-selected dream (re-enter panel)
   if (view === "dream" && rest[0]) dreamId = rest[0];
   if (view === "session" && rest[0]) sessionId = rest[0];
+  if (view === "arcade" && rest[0] && rest[0] !== "") dreamId = rest[0];
   return { view, activeDreamId: dreamId, activeSessionId: sessionId };
 }
 
 function toHash(view: View, dreamId?: string | null, sessionId?: string | null) {
   if (view === "dream" && dreamId) return `#/dream/${dreamId}`;
   if (view === "session" && sessionId) return `#/session/${sessionId}`;
+  if (view === "arcade" && dreamId) return `#/arcade/${dreamId}`;
   return `#/${view === "landing" ? "" : view}`;
 }
 

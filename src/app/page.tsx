@@ -24,6 +24,7 @@ export default function Home() {
   const view = useApp((s) => s.view);
   const mounted = useApp((s) => s.mounted);
   const syncFromHash = useApp((s) => s.syncFromHash);
+  const navigate = useApp((s) => s.navigate);
   useAuthRouting();
 
   // Sync the store from the URL hash AFTER mount to avoid SSR/CSR mismatch.
@@ -32,6 +33,46 @@ export default function Home() {
   }, [syncFromHash]);
 
   const authed = status === "authenticated";
+
+  // Global keyboard shortcuts (only when authenticated and not typing).
+  // C capture · J journal · P patterns · A arcade · T today
+  useEffect(() => {
+    if (!authed) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      switch (e.key.toLowerCase()) {
+        case "c":
+          navigate("capture");
+          break;
+        case "j":
+          navigate("journal");
+          break;
+        case "p":
+          navigate("patterns");
+          break;
+        case "a":
+          navigate("arcade");
+          break;
+        case "t":
+          navigate("dashboard");
+          break;
+        default:
+          return;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [authed, navigate]);
+
   const loading = status === "loading" || !mounted;
 
   // Full-bleed views (landing + auth) render their own background + footer.

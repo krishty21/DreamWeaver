@@ -70,6 +70,8 @@ export type SimulationState = {
   visitedScenes: string[]; // short scene titles
   inventory: string[];
   phase: "opening" | "developing" | "climax" | "resolving";
+  // For Confront sessions: the app-selected motif this session centres on.
+  confrontMotif?: string;
 };
 
 // AI-proposed delta for a turn. App validates/clamps before applying.

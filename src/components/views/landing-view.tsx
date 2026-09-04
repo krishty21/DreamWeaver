@@ -42,7 +42,16 @@ export function LandingView() {
       </div>
 
       {/* hero */}
-      <section className="mx-auto w-full max-w-6xl px-5 sm:px-8 pt-16 sm:pt-24 pb-20">
+      <section className="relative mx-auto w-full max-w-6xl px-5 sm:px-8 pt-16 sm:pt-24 pb-20">
+        {/* floating dream fragments — soft surrealism */}
+        <div className="absolute inset-0 overflow-hidden" aria-hidden="true">
+          <span className="fragment" style={{ left: "8%", top: "12%", animationDelay: "0s", fontSize: "1.4rem" }}>the same door…</span>
+          <span className="fragment" style={{ left: "78%", top: "6%", animationDelay: "-3s", fontSize: "1.15rem" }}>an ocean, again</span>
+          <span className="fragment" style={{ left: "16%", top: "58%", animationDelay: "-6s", fontSize: "1.25rem" }}>someone calling</span>
+          <span className="fragment" style={{ left: "84%", top: "46%", animationDelay: "-8.5s", fontSize: "1.05rem" }}>the clock again</span>
+          <span className="fragment" style={{ left: "46%", top: "2%", animationDelay: "-5s", fontSize: "1rem" }}>half a memory</span>
+          <span className="fragment" style={{ left: "63%", top: "72%", animationDelay: "-9.5s", fontSize: "1.2rem" }}>flight, briefly</span>
+        </div>
         <motion.div
           initial="hidden"
           animate="show"

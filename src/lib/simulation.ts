@@ -97,6 +97,9 @@ export function applyDelta(
     inventory,
     phase,
   };
+  // Carry forward the app-selected confront motif for the whole session —
+  // it is pinned at creation and never changes mid-session.
+  if (prev.confrontMotif) state.confrontMotif = prev.confrontMotif;
 
   // ---- Ending determination (AUTHORITATIVE, app-side) ----
   // The model may propose an ending, but the app decides if it actually fires

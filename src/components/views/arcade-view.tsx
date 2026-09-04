@@ -4,8 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useApp, View } from "@/lib/store";
 import { Button } from "@/components/ui/button";
 import { Compass, ArrowLeft, Loader2, Sparkles, Play, RotateCcw, Swords, Moon } from "lucide-react";
-import { motion } from "framer-motion";
-import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { useState, useMemo } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { ArcadeMode } from "@/lib/types";
 
@@ -15,6 +15,10 @@ async function fetchDreams() {
 }
 async function fetchSessions() {
   const res = await fetch("/api/arcade/sessions");
+  return res.json();
+}
+async function fetchPatterns() {
+  const res = await fetch("/api/patterns");
   return res.json();
 }
 
@@ -27,19 +31,21 @@ const MODES: { id: ArcadeMode; label: string; icon: any; body: string }[] = [
 export function ArcadeView() {
   const navigate = useApp((s) => s.navigate);
   const dreamId = useApp((s) => s.activeDreamId);
-  const { data: dreamsData } = useQuery({ queryKey: ["dreams"], queryFn: fetchDreams, enabled: !dreamId });
+  // Always fetch dreams (react-query caches) so the StartPanel can resolve the
+  // real dream title even when arriving via a deep link with an empty cache.
+  const { data: dreamsData, isLoading: dreamsLoading } = useQuery({ queryKey: ["dreams"], queryFn: fetchDreams });
   const { data: sessionsData } = useQuery({ queryKey: ["sessions"], queryFn: fetchSessions });
 
   const dreams: any[] = dreamsData?.dreams ?? [];
   const sessions: any[] = sessionsData?.sessions ?? [];
 
   // If a dreamId is set (from "Re-enter dream"), show the start panel for that dream.
-  const startDream = dreams.find((d) => d.id === dreamId) || (dreamId ? { id: dreamId, title: "A dream", analysis: null, rawText: "" } : null);
+  const startDream = dreams.find((d) => d.id === dreamId) ?? (dreamId ? { id: dreamId, title: "Opening the dream…", analysis: null, rawText: "", motifs: [] } : null);
 
   return (
     <div className="mx-auto max-w-6xl px-5 sm:px-8 py-10 sm:py-14">
       {startDream ? (
-        <StartPanel dream={startDream} onBack={() => navigate("arcade", { dreamId: undefined as any } as any)} />
+        <StartPanel dream={startDream} loading={dreamsLoading && !dreamsData} onBack={() => navigate("arcade")} />
       ) : (
         <>
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
@@ -94,7 +100,7 @@ export function ArcadeView() {
                   <button
                     key={d.id}
                     onClick={() => navigate("arcade", { dreamId: d.id })}
-                    className="surface p-5 text-left hover:translate-y-[-2px] transition-transform"
+                    className="surface p-5 text-left lift"
                   >
                     <div className="text-xs text-muted-foreground mb-1">
                       {new Date(d.createdAt).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
@@ -119,12 +125,26 @@ export function ArcadeView() {
   );
 }
 
-function StartPanel({ dream, onBack }: { dream: any; onBack: () => void }) {
+function StartPanel({ dream, loading, onBack }: { dream: any; loading?: boolean; onBack: () => void }) {
   const navigate = useApp((s) => s.navigate);
   const qc = useQueryClient();
   const { toast } = useToast();
   const [mode, setMode] = useState<ArcadeMode>("replay");
   const [starting, setStarting] = useState(false);
+
+  // For Confront mode: surface the strongest recurring motif tied to this dream
+  // (computed app-side from patterns — the model is told, it does not decide).
+  const { data: patternsData } = useQuery({ queryKey: ["patterns"], queryFn: fetchPatterns });
+  const confrontMotif = useMemo(() => {
+    const report = patternsData?.report;
+    if (!report || !report.topMotifs?.length) return null;
+    const dreamMotifs: string[] = (dream.motifs ?? []).map((m: any) => (m.label ?? "").toLowerCase());
+    // Prefer a motif that both recurs across dreams AND appears in this dream.
+    const inDream = report.topMotifs.find(
+      (m: any) => dreamMotifs.includes(m.label.toLowerCase()) && m.count >= 2
+    );
+    return inDream ?? report.topMotifs[0];
+  }, [patternsData, dream]);
 
   async function start() {
     setStarting(true);
@@ -132,7 +152,12 @@ function StartPanel({ dream, onBack }: { dream: any; onBack: () => void }) {
       const res = await fetch("/api/arcade/sessions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ dreamId: dream.id, mode }),
+        body: JSON.stringify({
+          dreamId: dream.id,
+          mode,
+          // app-selected motif the Confront session will centre on
+          confrontMotif: mode === "confront" ? confrontMotif?.label ?? null : null,
+        }),
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
@@ -163,7 +188,7 @@ function StartPanel({ dream, onBack }: { dream: any; onBack: () => void }) {
           Re-enter dream
         </div>
         <h1 className="font-display tracking-display text-5xl sm:text-6xl leading-[0.95] balance">
-          {dream.title || "Untitled dream"}
+          {loading ? <span className="inline-block min-w-[16rem] animate-pulse">…</span> : dream.title || "Untitled dream"}
         </h1>
         {dream.analysis?.summary && (
           <p className="mt-3 text-sm sm:text-base text-muted-foreground pretty max-w-xl">
@@ -184,10 +209,15 @@ function StartPanel({ dream, onBack }: { dream: any; onBack: () => void }) {
               <button
                 key={m.id}
                 onClick={() => setMode(m.id)}
-                className={`surface p-5 text-left transition ${active ? "ring-2 ring-foreground" : "hover:translate-y-[-2px]"}`}
+                aria-pressed={active}
+                className={`surface p-5 text-left transition-all duration-300 ${
+                  active
+                    ? "ring-2 ring-foreground shadow-[0_18px_40px_-20px_rgba(65,63,61,0.35)]"
+                    : "hover:-translate-y-1 hover:shadow-[0_18px_40px_-22px_rgba(65,63,61,0.28)]"
+                }`}
               >
                 <div className="flex items-center justify-between">
-                  <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full ${active ? "bg-foreground text-background" : "bg-foreground/[0.06]"}`}>
+                  <span className={`inline-flex h-9 w-9 items-center justify-center rounded-full transition-colors ${active ? "bg-foreground text-background" : "bg-foreground/[0.06]"}`}>
                     <Icon className="h-4 w-4" strokeWidth={1.6} />
                   </span>
                   {active && <span className="text-[10px] tracking-caps uppercase text-foreground">selected</span>}
@@ -198,6 +228,38 @@ function StartPanel({ dream, onBack }: { dream: any; onBack: () => void }) {
             );
           })}
         </div>
+
+        {/* Confront mode: show the motif the session will centre on */}
+        <AnimatePresence>
+          {mode === "confront" && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="surface-quiet mt-4 p-4 flex items-start gap-3">
+                <Swords className="h-4 w-4 mt-0.5 text-muted-foreground" strokeWidth={1.6} />
+                <div className="text-sm">
+                  {confrontMotif ? (
+                    <>
+                      This session will centre on{" "}
+                      <span className="font-display text-lg capitalize text-foreground">
+                        {confrontMotif.label}
+                      </span>
+                      {" "}— observed in <span className="font-data">{confrontMotif.count}</span> of your
+                      recorded dream{confrontMotif.count === 1 ? "" : "s"}. The figure will be present,
+                      and addressable.
+                    </>
+                  ) : (
+                    <>A recurring motif from your history will surface as a present, addressable entity.</>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </section>
 
       <div className="mt-8 flex items-center justify-between gap-3">
@@ -222,7 +284,7 @@ function SessionCard({ session, index, onOpen }: { session: any; index: number; 
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: Math.min(index * 0.04, 0.4) }}
       onClick={onOpen}
-      className="surface p-5 text-left hover:translate-y-[-2px] transition-transform"
+      className="surface p-5 text-left lift"
     >
       <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
         <span className="tracking-caps uppercase">{session.mode}</span>
