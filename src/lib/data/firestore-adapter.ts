@@ -49,21 +49,22 @@
 // validated/clamped.
 
 import type { Repository } from "./repository";
-import admin from "firebase-admin";
+import { getApps, initializeApp, applicationDefault } from "firebase-admin/app";
+import { getFirestore, FieldValue } from "firebase-admin/firestore";
 
 // ---------- SDK singletons ----------
 
 let _dbstore: any = null;
 function firestore(): any {
   if (_dbstore) return _dbstore;
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.applicationDefault(),
+  if (!getApps().length) {
+    initializeApp({
+      credential: applicationDefault(),
       projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT,
       storageBucket: process.env.FIREBASE_STORAGE_BUCKET || undefined,
-    });
+    } as any);
   }
-  _dbstore = admin.app().firestore();
+  _dbstore = getFirestore();
   return _dbstore;
 }
 
@@ -110,6 +111,14 @@ function toDate(v: any): Date | null {
   if (typeof v === "string") return new Date(v);
   if (typeof v === "number") return new Date(v);
   return null;
+}
+
+function compareValues(a: any, b: any, direction: any): number {
+  const av = toDate(a)?.getTime() ?? a ?? 0;
+  const bv = toDate(b)?.getTime() ?? b ?? 0;
+  if (av === bv) return 0;
+  const cmp = av > bv ? 1 : -1;
+  return direction === "desc" ? -cmp : cmp;
 }
 
 // Map of DreamAnalysis JSON-string fields.
@@ -303,7 +312,26 @@ class FirestoreRepository implements Repository {
       return shapeUser(snap.id, snap.data(), args.select);
     },
     async findFirst(args: any): Promise<any> {
-      return this.user.findUnique(args);
+      const w = args.where ?? {};
+      let snap: any;
+      if (w.id) {
+        snap = await firestore().doc(`users/${w.id}`).get();
+      } else if (w.email) {
+        snap = await firestore()
+          .collection("users")
+          .where("email", "==", w.email)
+          .limit(1)
+          .get();
+      } else {
+        return null;
+      }
+      if (snap.empty) return null;
+      if (snap.exists === false) return null;
+      if (snap.docs) {
+        const doc = snap.docs[0];
+        return shapeUser(doc.id, doc.data(), args.select);
+      }
+      return shapeUser(snap.id, snap.data(), args.select);
     },
     async create(args: any): Promise<any> {
       const ref = firestore().collection("users").doc();
@@ -311,8 +339,8 @@ class FirestoreRepository implements Repository {
         email: args.data.email,
         name: args.data.name ?? null,
         password: args.data.password,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
       const snap = await ref.get();
       return shapeUser(ref.id, snap.data(), args.select);
@@ -381,8 +409,8 @@ class FirestoreRepository implements Repository {
         shareIncludeRaw: false,
         sharedAt: null,
         shareExpiresAt: null,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
       const snap = await ref.get();
       const doc = shapeDream(ref.id, snap.data());
@@ -392,7 +420,7 @@ class FirestoreRepository implements Repository {
       const ref = firestore().doc(`dreams/${args.where.id}`);
       const existing = await ref.get();
       if (!existing.exists) throw new Error("dream not found");
-      const data: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+      const data: any = { updatedAt: FieldValue.serverTimestamp() };
       for (const k of [
         "title",
         "mood",
@@ -459,7 +487,7 @@ class FirestoreRepository implements Repository {
       for (const k of ANALYSIS_JSON_FIELDS) {
         if (k in args.data) payload[NATIVE_KEY(k)] = jparse(args.data[k], []);
       }
-      payload.createdAt = admin.firestore.FieldValue.serverTimestamp();
+      payload.createdAt = FieldValue.serverTimestamp();
       await ref.set(payload);
       const snap = await ref.get();
       return shapeAnalysis(snap.data());
@@ -489,7 +517,7 @@ class FirestoreRepository implements Repository {
           note: r.note ?? null,
           confidence: r.confidence ?? 0.5,
           entityId: r.entityId ?? null,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         });
       }
       await batch.commit();
@@ -559,8 +587,8 @@ class FirestoreRepository implements Repository {
         mentionCount: args.data.mentionCount ?? 0,
         firstSeen: args.data.firstSeen ?? null,
         lastSeen: args.data.lastSeen ?? null,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
       if (args.include?.mentions) {
         return shapeEntity(ref.id, (await ref.get()).data(), []);
@@ -569,7 +597,7 @@ class FirestoreRepository implements Repository {
     },
     async update(args: any): Promise<any> {
       const ref = firestore().doc(`entities/${args.where.id}`);
-      const data: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+      const data: any = { updatedAt: FieldValue.serverTimestamp() };
       for (const k of ["label", "type", "note", "mentionCount", "firstSeen", "lastSeen"]) {
         if (k in args.data) data[k] = args.data[k];
       }
@@ -594,13 +622,18 @@ class FirestoreRepository implements Repository {
       const uid = requireUserId(args.where, "entity.findMany");
       let q: any = firestore().collection("entities").where("userId", "==", uid);
       if (args.where?.label?.in) q = q.where("label", "in", args.where.label.in);
-      if (args.orderBy) {
-        for (const [k, v] of Object.entries(args.orderBy)) {
-          q = q.orderBy(k, v as any);
-        }
-      }
       const snap = await q.get();
       const docs = snap.docs.map((d: any) => shapeEntity(d.id, d.data()));
+      if (args.orderBy) {
+        const entries = Object.entries(args.orderBy);
+        docs.sort((a, b) => {
+          for (const [k, v] of entries) {
+            const cmp = compareValues(a[k], b[k], v);
+            if (cmp !== 0) return cmp;
+          }
+          return 0;
+        });
+      }
       if (args.include?.mentions) {
         const includeDream = !!args.include.mentions.include?.dream;
         const dreamSelect = args.include.mentions.include?.dream?.select;
@@ -608,9 +641,13 @@ class FirestoreRepository implements Repository {
           const mSnap = await firestore()
             .collection("entityMentions")
             .where("entityId", "==", doc.id)
-            .orderBy("createdAt", args.include.mentions.orderBy?.createdAt ?? "asc")
             .get();
           doc.mentions = mSnap.docs.map((d: any) => shapeEntityMention(d.id, d.data()));
+          if (args.include.mentions.orderBy?.createdAt) {
+            doc.mentions.sort((a: any, b: any) =>
+              compareValues(a.createdAt, b.createdAt, args.include.mentions.orderBy.createdAt)
+            );
+          }
           if (includeDream) {
             for (const m of doc.mentions) {
               const dSnap = await firestore().doc(`dreams/${m.dreamId}`).get();
@@ -655,7 +692,7 @@ class FirestoreRepository implements Repository {
         lucidity: d.lucidity ?? 0,
         mood: d.mood ?? "neutral",
         role: d.role ?? "appears",
-        createdAt: d.createdAt ?? admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: d.createdAt ?? FieldValue.serverTimestamp(),
       });
       const snap = await ref.get();
       return shapeEntityMention(ref.id, snap.data());
@@ -701,20 +738,20 @@ class FirestoreRepository implements Repository {
           if (args.include.dream) {
             const dSnap = await firestore().doc(`dreams/${doc.dreamId}`).get();
             const dd = dSnap.data();
+            doc.dream = shapeDream(doc.dreamId, dd);
             if (args.include.dream?.include?.analysis) {
               const aSnap = await firestore()
                 .doc(`dreams/${doc.dreamId}/analysis/current`)
                 .get();
-              dd.analysis = aSnap.exists ? shapeAnalysis(aSnap.data()) : null;
+              doc.dream.analysis = aSnap.exists ? shapeAnalysis(aSnap.data()) : null;
             }
             if (args.include.dream?.include?.motifs) {
               const mSnap = await firestore()
                 .collection("motifs")
                 .where("dreamId", "==", doc.dreamId)
                 .get();
-              dd.motifs = mSnap.docs.map((m: any) => shapeMotif(m.id, m.data()));
+              doc.dream.motifs = mSnap.docs.map((m: any) => shapeMotif(m.id, m.data()));
             }
-            doc.dream = shapeDream(doc.dreamId, dd);
           }
           if (args.include.turns) {
             const select = args.include.turns.select;
@@ -760,20 +797,20 @@ class FirestoreRepository implements Repository {
       if (args.include?.dream) {
         const dSnap = await firestore().doc(`dreams/${doc.dreamId}`).get();
         const dd = dSnap.data();
+        doc.dream = shapeDream(doc.dreamId, dd);
         if (args.include.dream.include?.analysis) {
           const aSnap = await firestore()
             .doc(`dreams/${doc.dreamId}/analysis/current`)
             .get();
-          dd.analysis = aSnap.exists ? shapeAnalysis(aSnap.data()) : null;
+          doc.dream.analysis = aSnap.exists ? shapeAnalysis(aSnap.data()) : null;
         }
         if (args.include.dream.include?.motifs) {
           const mSnap = await firestore()
             .collection("motifs")
             .where("dreamId", "==", doc.dreamId)
             .get();
-          dd.motifs = mSnap.docs.map((m: any) => shapeMotif(m.id, m.data()));
+          doc.dream.motifs = mSnap.docs.map((m: any) => shapeMotif(m.id, m.data()));
         }
-        doc.dream = shapeDream(doc.dreamId, dd);
       }
       if (args.include?.turns) {
         const tSnap = await firestore()
@@ -810,15 +847,15 @@ class FirestoreRepository implements Repository {
         shareToken: null,
         sharedAt: null,
         shareExpiresAt: null,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
       });
       const snap = await ref.get();
       return shapeArcadeSession(ref.id, snap.data());
     },
     async update(args: any): Promise<any> {
       const ref = firestore().doc(`arcadeSessions/${args.where.id}`);
-      const data: any = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+      const data: any = { updatedAt: FieldValue.serverTimestamp() };
       for (const k of ["status", "ending", "shareToken", "sharedAt", "shareExpiresAt"]) {
         if (k in args.data) data[k] = args.data[k];
       }
@@ -866,7 +903,7 @@ class FirestoreRepository implements Repository {
         appliedDelta: jparse(d.appliedDeltaJson ?? "{}", {}),
         isEnding: !!d.isEnding,
         endingType: d.endingType ?? null,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
       const snap = await ref.get();
       return shapeTurn(ref.id, snap.data());
@@ -938,7 +975,7 @@ class FirestoreRepository implements Repository {
           id: ref.id,
           userId: uid,
           word,
-          createdAt: admin.firestore.FieldValue.serverTimestamp(),
+          createdAt: FieldValue.serverTimestamp(),
         });
       }
       const refreshed = await ref.get();

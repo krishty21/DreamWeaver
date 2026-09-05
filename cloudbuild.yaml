@@ -90,6 +90,7 @@ steps:
       - --timeout=300
       - --ingress=all
       - --allow-unauthenticated
+      - --labels=dev-tutorial=cloud-run-ai-challenge
       - --set-env-vars=DATA_BACKEND=firestore,AI_BACKEND=gemini,AUTH_BACKEND=firebase,SECRETS_BACKEND=gsm,NEXT_PUBLIC_AUTH_BACKEND=firebase,NEXTAUTH_URL=https://${_SERVICE_NAME}.${_REGION}.run.app,FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT_ID},GCLOUD_PROJECT=${_FIREBASE_PROJECT_ID}
       # Mount secrets from Secret Manager as env vars (the SA must have
       # roles/secretmanager.secretAccessor).

@@ -191,14 +191,15 @@ export async function requireUser(): Promise<string> {
 let _firebaseAuth: any = null;
 async function firebaseAuth(): Promise<any> {
   if (_firebaseAuth) return _firebaseAuth;
-  const admin = await import("firebase-admin");
-  if (!admin.apps.length) {
-    admin.initializeApp({
-      credential: admin.credential.applicationDefault(),
+  const { getApps, initializeApp, applicationDefault } = await import("firebase-admin/app");
+  if (!getApps().length) {
+    initializeApp({
+      credential: applicationDefault(),
       projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT,
-    });
+    } as any);
   }
-  _firebaseAuth = admin.auth();
+  const { getAuth } = await import("firebase-admin/auth");
+  _firebaseAuth = getAuth();
   return _firebaseAuth;
 }
 

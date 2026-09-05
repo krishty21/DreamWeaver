@@ -63,27 +63,19 @@ Three modes in the Arcade:
 
 ---
 
-## Architecture (dual-adapter; production-ready + local-QA)
+## Architecture
 
-DreamWeaver runs on a **dual data + AI + auth stack** switchable via
-environment variables. The local dev + sandbox QA path needs ZERO
-Google Cloud credentials. The production path uses the real Google
-stack (Firestore, Firebase Auth, Gemini-direct, Secret Manager, Cloud
-Run) with official SDKs.
+DreamWeaver runs on a **production-ready** stack switchable via environment variables for local testing. The production path uses the real Google stack (Firestore, Firebase Auth, Gemini-direct, Secret Manager, Cloud Run) with official SDKs.
 
-| Layer | Local + sandbox QA | Production (Google Cloud Run) | Switch env |
-|---|---|---|---|
-| Data | Prisma + SQLite | `firebase-admin` Firestore | `DATA_BACKEND` (`sqlite` \| `firestore`) |
-| AI | `z-ai-web-dev-sdk` | `@google/genai` direct | `AI_BACKEND` (`zai` \| `gemini`) |
-| Auth | NextAuth v4 Credentials + bcrypt | Firebase Auth (ID-token verify → NextAuth JWT) | `AUTH_BACKEND` (`nextauth` \| `firebase`) |
-| Secrets | `process.env` | `@google-cloud/secret-manager` | `SECRETS_BACKEND` (`env` \| `gsm`) |
-| Hosting | `next dev` on :3000 | Cloud Run (managed) | n/a |
+| Layer | Production (Google Cloud Run) | Switch env |
+|---|---|---|
+| Data | `firebase-admin` Firestore | `DATA_BACKEND` (`sqlite` \| `firestore`) |
+| AI | `@google/genai` direct | `AI_BACKEND` (`gemini`) |
+| Auth | Firebase Auth (ID-token verify → NextAuth JWT) | `AUTH_BACKEND` (`nextauth` \| `firebase`) |
+| Secrets | `@google-cloud/secret-manager` | `SECRETS_BACKEND` (`env` \| `gsm`) |
+| Hosting | Cloud Run (managed) | n/a |
 
-Both paths implement the **same** `Repository` interface (`src/lib/data/repository.ts`)
-and the **same** `AIBackend` interface (`src/lib/ai/registry.ts`). The API
-routes call `getRepository()` / `getAI()` once at the top of the request
-and the active backend is wired transparently. Response shapes are
-identical; the routes do not know which backend served the request.
+The API routes call `getRepository()` / `getAI()` once at the top of the request and the active backend is wired transparently.
 
 ### The single most important technical principle
 
@@ -96,8 +88,7 @@ validates, clamps, and applies every model-proposed change. Endings are
 decided by authoritative state thresholds, not by model text. This
 separation is demonstrable in the code:
 
-- `src/lib/ai/shared.ts` — zod schemas + clamp + repair logic shared by
-  both AI backends (zai + gemini). Every model output passes through
+- `src/lib/ai/shared.ts` — zod schemas + clamp + repair logic. Every model output passes through
   `analysisSchema.parse` / `turnSchema.parse`, then through post-parse
   shape helpers that clamp numeric ranges, truncate strings, and
   normalise labels.
@@ -158,7 +149,6 @@ src/lib/
   ai/
     registry.ts               # AIBackend interface + getAI() factory
     shared.ts                 # zod schemas + clamp + repair (used by both backends)
-    zai-backend.ts            # Local path: z-ai-web-dev-sdk
     gemini-backend.ts         # Production path: @google/genai direct
   ai.ts                      # Public entrypoint — thin delegator to getAI()
   simulation.ts               # Authoritative state machine (applyDelta + endings)
@@ -299,11 +289,7 @@ bun run dev            # start the Next.js dev server on port 3000
 bun run lint           # ESLint
 ```
 
-Local dev needs ZERO Google Cloud credentials. The default env values
-(`DATA_BACKEND=sqlite`, `AI_BACKEND=zai`, `AUTH_BACKEND=nextauth`,
-`SECRETS_BACKEND=env`) wire the local + sandbox QA path: Prisma +
-SQLite + z-ai-web-dev-sdk (auto-resolved SDK credentials) + NextAuth
-Credentials + env secrets.
+Local dev needs ZERO Google Cloud credentials. The default env values wire the local + sandbox QA path: Prisma + SQLite + NextAuth Credentials + env secrets (you'll need to configure GEMINI_API_KEY locally).
 
 The app runs entirely on `http://localhost:3000`. The only user-visible
 route is `/` (a single-page app with hash-based view switching);
@@ -399,7 +385,7 @@ Unit-test coverage for the model-JSON repair logic lives in
 - **The Google-stack production path (Firestore / Firebase Auth /
   Gemini-direct / Secret Manager / Cloud Run) is real code with the
   official SDKs and is deployable, but in this sandbox it was
-  runtime-verified only on the local SQLite / z-ai-web-dev-sdk /
+  runtime-verified only on the local SQLite /
   NextAuth path.** No Google Cloud credentials exist in the sandbox;
   the production path was not exercised against live Google Cloud.
   The Firestore adapter, the @google/genai backend, the Secret

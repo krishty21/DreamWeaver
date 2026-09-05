@@ -151,7 +151,7 @@ function FirebaseAuthProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       // Firebase client not configured (missing NEXT_PUBLIC_FIREBASE_*).
       // Fail safely to unauthenticated so the user sees the auth view.
-      setStatus("unauthenticated");
+      queueMicrotask(() => setStatus("unauthenticated"));
     }
     return () => unsub();
   }, []);

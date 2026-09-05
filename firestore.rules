@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- helpers ----------
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ---------- dreams ----------
+    match /dreams/{dreamId} {
+      allow read, write: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+
+      // analysis subcollection lives under each dream doc
+      match /analysis/{doc} {
+        allow read, write: if isSignedIn()
+          && isOwner(get(/databases/$(database)/documents/dreams/$(dreamId)).data.userId);
+      }
+    }
+
+    // ---------- motifs ----------
+    match /motifs/{motifId} {
+      allow read, write: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+    }
+
+    // ---------- entities (pattern graph nodes) ----------
+    match /entities/{entityId} {
+      allow read, write: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+    }
+
+    // ---------- threads ----------
+    match /threads/{threadId} {
+      allow read, write: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+    }
+
+    // ---------- arcade sessions ----------
+    match /arcadeSessions/{sessionId} {
+      allow read, write: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+
+      // turns subcollection
+      match /turns/{turnId} {
+        allow read, write: if isSignedIn()
+          && isOwner(get(/databases/$(database)/documents/arcadeSessions/$(sessionId)).data.userId);
+      }
+
+      // distributed lock subcollection (server-side only via Admin SDK)
+      match /locks/{lockId} {
+        allow read, write: if false; // server-only via Admin SDK
+      }
+    }
+
+    // ---------- shared sessions (public read via token) ----------
+    // sharedSessions is a flat collection keyed by shareToken.
+    // Anyone with the token URL can read; only the owner can write.
+    match /sharedSessions/{token} {
+      allow read: if true; // public — token is unguessable (UUID)
+      allow write: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+    }
+
+    // ---------- distributed locks (top-level) ----------
+    match /locks/{lockId} {
+      allow read, write: if false; // server-only via Admin SDK
+    }
+  }
+}

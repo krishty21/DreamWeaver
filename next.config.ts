@@ -3,9 +3,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "standalone",
   /* config options here */
-  typescript: {
-    ignoreBuildErrors: true,
-  },
   reactStrictMode: false,
   // Tree-shake per-icon imports from lucide-react so only the icons actually
   // used in a route ship to the client (lucide-react exports ~1500 icons as

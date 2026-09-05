@@ -98,7 +98,8 @@ export async function POST(req: Request) {
     maxAge: SESSION_MAX_AGE_SECONDS,
   });
 
-  const isHttps = req.url.startsWith("https://");
+  const forwardedProto = req.headers.get("x-forwarded-proto");
+  const isHttps = process.env.NEXTAUTH_URL?.startsWith("https://") ?? (forwardedProto ? forwardedProto === "https" : req.url.startsWith("https://"));
   const cookieName = isHttps ? "__Secure-next-auth.session-token" : "next-auth.session-token";
   const cookie = `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${SESSION_MAX_AGE_SECONDS}${isHttps ? "; Secure" : ""}`;
 

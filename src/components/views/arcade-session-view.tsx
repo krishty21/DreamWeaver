@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ArrowLeft, Loader2, Send, Compass, RotateCcw, Brain, Sparkles, Moon, Share2, Copy, Check, Link2Off, BookOpenText, Hourglass } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useToast } from "@/hooks/use-toast";
 import type { SimulationState, ArcadeChoice, MemoryEcho } from "@/lib/types";
 
@@ -32,6 +32,7 @@ export function ArcadeSessionView() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [pending, setPending] = useState(false);
+  const pendingRef = useRef(false);
   const [action, setAction] = useState("");
   const [whisper, setWhisper] = useState(0);
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -101,7 +102,8 @@ export function ArcadeSessionView() {
   })();
 
   async function takeTurn(payload: { userAction?: string; choiceId?: string }) {
-    if (pending || ended) return;
+    if (pendingRef.current || pending || ended) return;
+    pendingRef.current = true;
     setPending(true);
     setStreamingScene("");
     // r12 — clear the previous turn's echo so a fresh one can surface this turn.
@@ -175,6 +177,7 @@ export function ArcadeSessionView() {
     } catch (e: any) {
       toast({ title: "Turn failed", description: e.message, variant: "destructive" });
     } finally {
+      pendingRef.current = false;
       setPending(false);
       setStreamingScene("");
     }

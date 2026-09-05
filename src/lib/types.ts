@@ -57,6 +57,7 @@ export type DreamAnalysisData = {
   interpretations: Interpretation[];
   relationships: Relationship[];
   historicalConnections: HistoricalConnection[];
+  evidence?: string[];
   // r12 — DREAM LAWS: a small number of recurring internal rules the model
   // believes govern this dream. Advisory only; the Arcade uses them as
   // context for internal consistency, never as authoritative state.

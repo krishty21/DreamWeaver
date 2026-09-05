@@ -58,18 +58,20 @@ function localLock(key: string, opts: { ttlMs: number }): DistributedLock {
 // FIRESTORE (production) path — cross-instance mutex via a Firestore doc.
 // ─────────────────────────────────────────────────────────────────────
 
-let _admin: typeof import("firebase-admin") | null = null;
+let _firestore: any = null;
 async function firestore(): Promise<any> {
-  if (!_admin) {
-    _admin = await import("firebase-admin");
-    if (!_admin.apps.length) {
-      _admin.initializeApp({
-        credential: _admin.credential.applicationDefault(),
+  if (!_firestore) {
+    const { getApps, initializeApp, applicationDefault } = await import("firebase-admin/app");
+    if (!getApps().length) {
+      initializeApp({
+        credential: applicationDefault(),
         projectId: process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT,
-      });
+      } as any);
     }
+    const { getFirestore } = await import("firebase-admin/firestore");
+    _firestore = getFirestore();
   }
-  return _admin.app().firestore();
+  return _firestore;
 }
 
 function randomToken(): string {

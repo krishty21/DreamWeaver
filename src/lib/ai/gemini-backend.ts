@@ -54,6 +54,14 @@ function model(): string {
   return process.env.GEMINI_MODEL || "gemini-2.5-flash";
 }
 
+function repairContents(originalPrompt: string, raw: string, instruction: string) {
+  return [
+    { role: "user", parts: [{ text: originalPrompt }] },
+    { role: "model", parts: [{ text: raw.slice(0, 6000) }] },
+    { role: "user", parts: [{ text: instruction }] },
+  ];
+}
+
 class GeminiBackendImpl implements AIBackend {
   readonly backend = "gemini" as const;
 
@@ -91,22 +99,11 @@ class GeminiBackendImpl implements AIBackend {
       try {
         const retry = await ai.models.generateContent({
           model: model(),
-          contents: [
+          contents: repairContents(
             prompt.user,
-            {
-              role: "model",
-              parts: [{ text: raw.slice(0, 6000) }],
-            },
-            {
-              role: "user",
-              parts: [
-                {
-                  text:
-                    "Your previous response was not valid JSON (it may have contained prose, markdown, or was truncated). Return ONLY the JSON object — no prose, no code fences, no commentary. If some fields must be empty, use empty arrays or zero.",
-                },
-              ],
-            },
-          ],
+            raw,
+            "Your previous response was not valid JSON (it may have contained prose, markdown, or was truncated). Return ONLY the JSON object — no prose, no code fences, no commentary. If some fields must be empty, use empty arrays or zero."
+          ),
           config: {
             systemInstruction: prompt.system,
             responseMimeType: "application/json",
@@ -149,19 +146,11 @@ class GeminiBackendImpl implements AIBackend {
       try {
         const retry = await ai.models.generateContent({
           model: model(),
-          contents: [
+          contents: repairContents(
             prompt.user,
-            { role: "model", parts: [{ text: raw.slice(0, 6000) }] },
-            {
-              role: "user",
-              parts: [
-                {
-                  text:
-                    "Your previous response was not valid JSON. Return ONLY the JSON object matching the schema — no prose, no code fences. Keep sceneText vivid but finish the object.",
-                },
-              ],
-            },
-          ],
+            raw,
+            "Your previous response was not valid JSON. Return ONLY the JSON object matching the schema — no prose, no code fences. Keep sceneText vivid but finish the object."
+          ),
           config: {
             systemInstruction: prompt.system,
             responseMimeType: "application/json",
@@ -225,19 +214,11 @@ class GeminiBackendImpl implements AIBackend {
       try {
         const retry = await ai.models.generateContent({
           model: model(),
-          contents: [
+          contents: repairContents(
             prompt.user,
-            { role: "model", parts: [{ text: raw.slice(0, 6000) }] },
-            {
-              role: "user",
-              parts: [
-                {
-                  text:
-                    "Your previous response was not valid JSON. Return ONLY the JSON object matching the schema — no prose, no code fences. Keep sceneText vivid but finish the object.",
-                },
-              ],
-            },
-          ],
+            raw,
+            "Your previous response was not valid JSON. Return ONLY the JSON object matching the schema — no prose, no code fences. Keep sceneText vivid but finish the object."
+          ),
           config: {
             systemInstruction: prompt.system,
             responseMimeType: "application/json",

@@ -90,8 +90,8 @@ export class PrismaAdapterImpl implements Repository {
 
   async tx<T>(fn: (t: Repository) => Promise<T>): Promise<T> {
     // Prisma interactive transactions pass a tx client with the same shape.
-    return this.db.$transaction(async (tx: PrismaClient) => {
-      const txRepo = new PrismaAdapterImpl(tx);
+    return this.db.$transaction(async (tx: any) => {
+      const txRepo = new PrismaAdapterImpl(tx as PrismaClient);
       return fn(txRepo as Repository);
     }) as Promise<T>;
   }

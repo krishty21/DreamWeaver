@@ -30,6 +30,7 @@ import {
   Printer,
   Scroll,
   X,
+  MessageSquare,
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useToast } from "@/hooks/use-toast";
@@ -61,6 +62,7 @@ export function DreamDetailView() {
   const qc = useQueryClient();
   const [reflecting, setReflecting] = useState(false);
   const [shareBusy, setShareBusy] = useState(false);
+  const [discordBusy, setDiscordBusy] = useState(false);
   // r7 — audio playback state. The dream's narratable text is synthesised
   // server-side via /api/tts (Gemini TTS) and streamed back as a single WAV
   // the browser plays via <audio>. We revoke the object URL on close.
@@ -140,6 +142,35 @@ export function DreamDetailView() {
       toast({ title: "Revoke failed", description: e.message, variant: "destructive" });
     } finally {
       setShareBusy(false);
+    }
+  }
+
+  async function onShareDiscord() {
+    if (!dream || discordBusy) return;
+    setDiscordBusy(true);
+    try {
+      const res = await fetch("/api/discord", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dreamId: dream.id }),
+      });
+      if (res.status === 503) {
+        toast({
+          title: "Discord not configured",
+          description: "Add DISCORD_WEBHOOK_URL to the server environment to enable sharing.",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message || "Discord share failed.");
+      }
+      toast({ title: "Shared to Discord! 🎉", description: "Your dream was posted to your Discord channel." });
+    } catch (e: any) {
+      toast({ title: "Discord share failed", description: e.message, variant: "destructive" });
+    } finally {
+      setDiscordBusy(false);
     }
   }
 
@@ -268,6 +299,24 @@ export function DreamDetailView() {
               <span className="sr-only sm:not-sr-only sm:ml-1.5">
                 {shareToken ? "Shared…" : "Share"}
               </span>
+            </Button>
+          )}
+          {a && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onShareDiscord}
+              disabled={discordBusy || reflecting}
+              className="h-9"
+              aria-label="Share this dream to Discord"
+              title="Share to Discord"
+            >
+              {discordBusy ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <MessageSquare className="h-4 w-4" strokeWidth={1.6} />
+              )}
+              <span className="sr-only sm:not-sr-only sm:ml-1.5">Discord</span>
             </Button>
           )}
           <Button

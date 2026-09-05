@@ -35,6 +35,11 @@ export async function GET() {
     console.warn("[threads] lazy backfill failed (non-fatal):", e instanceof Error ? e.message : e);
   }
 
-  const threads = await computeThreads(userId);
-  return NextResponse.json({ threads });
+  try {
+    const threads = await computeThreads(userId);
+    return NextResponse.json({ threads });
+  } catch (e) {
+    console.warn("[threads] compute failed:", e instanceof Error ? e.message : e);
+    return NextResponse.json({ threads: [] });
+  }
 }
